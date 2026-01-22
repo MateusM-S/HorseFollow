@@ -1,12 +1,12 @@
 {
   "Group": "Mateus",
   "Name": "HorseFollow",
-  "Version": "1.0.19",
+  "Version": "1.1.8",
   "Description": "A simple mod that links the horse to you. | Um mod simples, que vincula o cavalo a voce.",
   "Authors": [
     {
       "Name": "MateusM-S",
-      "Url": "https://github.com/MateusM-S"
+      "Url": "https://github.com/MateusM-S/Git.HorseFollow"
     },
     {
       "Name": "Dazzakeen",
@@ -17,7 +17,7 @@
   "OptionalDependencies": {},
   "LoadBefore": {},
   "DisabledByDefault": false,
-  "IncludesAssetPack": false,
+  "IncludesAssetPack": true,
   "SubPlugins": [],
   "Main": "com.horsefollow.HorseFollowPlugin"
 }

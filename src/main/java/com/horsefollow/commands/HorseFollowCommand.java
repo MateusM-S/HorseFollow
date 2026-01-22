@@ -30,7 +30,6 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
-        // Não usa alias aqui (teu ambiente já quebrou com addAliases em builds anteriores)
         super("horsefollow", "Bind a horse to follow you", false);
 
         this.service = service;
@@ -46,7 +45,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         try {
             playerRef = context.senderAsPlayerRef();
         } catch (Throwable t) {
-            context.sender().sendMessage(Message.raw("[HorseFollow] comando só funciona para player."));
+            context.sender().sendMessage(Message.raw("[HorseFollow] O comando só funciona para jogadores."));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -83,13 +82,13 @@ public final class HorseFollowCommand extends AbstractCommand {
                     case "status": {
                         boolean bound = service.isBound(playerRef);
                         context.sender().sendMessage(Message.raw(bound
-                                ? "[HorseFollow] status: VINCULADO"
-                                : "[HorseFollow] status: NÃO VINCULADO"));
+                                ? "[HorseFollow] status: Você possui 01 vínculo."
+                                : "[HorseFollow] status: Você não possui vínculos ativos."));
                         break;
                     }
                     case "unbind": {
                         service.unbind(playerRef);
-                        context.sender().sendMessage(Message.raw("[HorseFollow] unbind: OK"));
+                        context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi quebrado."));
                         break;
                     }
                     case "bind": {
@@ -101,10 +100,10 @@ public final class HorseFollowCommand extends AbstractCommand {
                             }
                             if (fallbackHorse != null && fallbackHorse.isValid()) {
                                 service.bind(playerRef, fallbackHorse);
-                                context.sender().sendMessage(Message.raw("[HorseFollow] bind: OK"));
+                                context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi criado com sucesso!"));
                             } else {
                                 service.unbind(playerRef);
-                                context.sender().sendMessage(Message.raw("[HorseFollow] bind: monte no cavalo primeiro."));
+                            context.sender().sendMessage(Message.raw("[HorseFollow] Monte no cavalo primeiro."));
                             }
                             break;
                         }
@@ -112,7 +111,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                         Ref<EntityStore> horseRef = mounted.getMountedToEntity();
                         if (horseRef == null || !horseRef.isValid()) {
                             service.unbind(playerRef);
-                            context.sender().sendMessage(Message.raw("[HorseFollow] bind: mount inválido."));
+                            context.sender().sendMessage(Message.raw("[HorseFollow] Montaria inválida."));
                             break;
                         }
 
@@ -122,7 +121,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                         }
 
                         service.bind(playerRef, horseRef);
-                        context.sender().sendMessage(Message.raw("[HorseFollow] bind: OK"));
+                        context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi criado com sucesso!"));
                         break;
                     }
                     default:

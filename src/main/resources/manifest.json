@@ -17,7 +17,7 @@
   "OptionalDependencies": {},
   "LoadBefore": {},
   "DisabledByDefault": false,
-  "IncludesAssetPack": false,
+  "IncludesAssetPack": true,
   "SubPlugins": [],
   "Main": "com.horsefollow.HorseFollowPlugin"
 }

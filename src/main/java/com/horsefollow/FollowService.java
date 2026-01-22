@@ -7,6 +7,10 @@ import com.hypixel.hytale.component.Archetype;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
+import com.hypixel.hytale.server.npc.NPCPlugin;
+import com.hypixel.hytale.server.npc.entities.NPCEntity;
+import com.hypixel.hytale.server.npc.role.Role;
+import com.hypixel.hytale.server.npc.systems.RoleChangeSystem;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
@@ -17,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class FollowService {
@@ -27,10 +32,19 @@ public final class FollowService {
     private final Map<Ref<EntityStore>, Ref<EntityStore>> bound = new ConcurrentHashMap<>();
     // playerRef -> horse UUID (stable across entity ref changes)
     private final Map<Ref<EntityStore>, UUID> boundUuids = new ConcurrentHashMap<>();
+    // playerRef -> last teleport tick
+    private final Map<Ref<EntityStore>, Long> lastTeleportTickByPlayer = new ConcurrentHashMap<>();
+    // playerRef -> original role index before friendly swap
+    private final Map<Ref<EntityStore>, Integer> originalRoleByPlayer = new ConcurrentHashMap<>();
 
     // tuning
-    private static final double MAX_DISTANCE = 12.0;
-    private static final double BEHIND_OFFSET = 2.0;
+    private static final double MAX_DISTANCE = 25.0;
+    private static final double BEHIND_OFFSET = 3.0;
+    private static final int MAX_TPS_PER_APPLY = 2;
+    private static final int TP_COOLDOWN_TICKS = 200;
+    private static final String FRIENDLY_ROLE_ID = "Horse_Friendly";
+
+    private long tickCounter = 0L;
 
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
         if (playerRef == null || horseRef == null) return;
@@ -41,12 +55,19 @@ public final class FollowService {
             debug("bind uuid playerRef=" + playerRef + " horseUuid=" + horseUuid);
         }
         debug("bind playerRef=" + playerRef + " horseRef=" + horseRef);
+        applyFriendlyRole(playerRef, horseRef);
     }
 
     public void unbind(Ref<EntityStore> playerRef) {
         if (playerRef == null) return;
+        Ref<EntityStore> horseRef = bound.get(playerRef);
+        if (horseRef != null) {
+            applyOriginalRole(playerRef, horseRef);
+        }
         bound.remove(playerRef);
         boundUuids.remove(playerRef);
+        lastTeleportTickByPlayer.remove(playerRef);
+        originalRoleByPlayer.remove(playerRef);
         debug("unbind playerRef=" + playerRef);
     }
 
@@ -57,6 +78,27 @@ public final class FollowService {
     public Ref<EntityStore> getBoundHorse(Ref<EntityStore> playerRef) {
         if (playerRef == null) return null;
         return bound.get(playerRef);
+    }
+
+    private void applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        if (playerRef == null || horseRef == null) return;
+        Store<EntityStore> store = horseRef.getStore();
+        if (store == null) return;
+        EntityStore entityStore = store.getExternalData();
+        worldExecute(entityStore, () -> applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true));
+    }
+
+    private void applyOriginalRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        if (playerRef == null || horseRef == null) return;
+        Store<EntityStore> store = horseRef.getStore();
+        if (store == null) return;
+        EntityStore entityStore = store.getExternalData();
+        worldExecute(entityStore, () -> {
+            Integer originalIndex = originalRoleByPlayer.get(playerRef);
+            int targetIndex = originalIndex != null ? originalIndex : NPCPlugin.get().getIndex("Horse");
+            if (targetIndex < 0) return;
+            applyRoleChange(store, playerRef, horseRef, targetIndex, false);
+        });
     }
 
     /**
@@ -82,6 +124,10 @@ public final class FollowService {
     public void tick() {
         if (bound.isEmpty()) return;
 
+        tickCounter++;
+        long currentTick = tickCounter;
+        AtomicInteger teleportsThisTick = new AtomicInteger(0);
+
         for (Map.Entry<Ref<EntityStore>, Ref<EntityStore>> e : bound.entrySet()) {
             Ref<EntityStore> playerRef = e.getKey();
             Ref<EntityStore> horseRef = e.getValue();
@@ -89,6 +135,7 @@ public final class FollowService {
             if (playerRef == null || horseRef == null) continue;
             if (!playerRef.isValid()) {
                 bound.remove(playerRef);
+                lastTeleportTickByPlayer.remove(playerRef);
                 continue;
             }
             if (!horseRef.isValid()) {
@@ -104,6 +151,10 @@ public final class FollowService {
             // IMPORTANTÍSSIMO: acesso ECS dentro do world.execute(...)
             worldExecute(entityStore, () -> {
                 try {
+                    if (teleportsThisTick.get() >= MAX_TPS_PER_APPLY) return;
+                    Long lastTick = lastTeleportTickByPlayer.get(playerRef);
+                    if (lastTick != null && (currentTick - lastTick) < TP_COOLDOWN_TICKS) return;
+
                     TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
                     TransformComponent horseTf  = store.getComponent(horseRef, TransformComponent.getComponentType());
                     if (playerTf == null || horseTf == null) return;
@@ -121,6 +172,8 @@ public final class FollowService {
 
                     Vector3d target = new Vector3d(p.getX(), p.getY(), p.getZ() - BEHIND_OFFSET);
                     horseTf.teleportPosition(target);
+                    lastTeleportTickByPlayer.put(playerRef, currentTick);
+                    teleportsThisTick.incrementAndGet();
 
                 } catch (Throwable ignore) {
                     // sem log
@@ -145,11 +198,57 @@ public final class FollowService {
             debug("rebind resolved playerRef=" + playerRef + " resolved=" + resolved);
             if (resolved != null && resolved.isValid()) {
                 bound.put(playerRef, resolved);
+                applyFriendlyRole(playerRef, resolved);
             } else {
                 bound.remove(playerRef);
                 boundUuids.remove(playerRef);
             }
         });
+    }
+
+    private void applyRoleChange(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> horseRef,
+            String targetRoleId,
+            boolean storeOriginal
+    ) {
+        if (store == null || playerRef == null || horseRef == null) return;
+        if (targetRoleId == null || targetRoleId.isBlank()) return;
+
+        int targetIndex = NPCPlugin.get().getIndex(targetRoleId);
+        if (targetIndex < 0) return;
+
+        applyRoleChange(store, playerRef, horseRef, targetIndex, storeOriginal);
+    }
+
+    private void applyRoleChange(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> horseRef,
+            int targetIndex,
+            boolean storeOriginal
+    ) {
+        if (store == null || playerRef == null || horseRef == null) return;
+        if (targetIndex < 0) return;
+
+        NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
+        if (npc == null) return;
+        Role role = npc.getRole();
+        if (role == null) return;
+
+        if (storeOriginal) {
+            originalRoleByPlayer.putIfAbsent(playerRef, npc.getRoleIndex());
+        }
+
+        if (npc.getRoleIndex() == targetIndex) return;
+
+        NPCMountComponent npcMount = store.getComponent(horseRef, NPCMountComponent.getComponentType());
+        if (npcMount != null) {
+            npcMount.setOriginalRoleIndex(targetIndex);
+        }
+
+        RoleChangeSystem.requestRoleChange(horseRef, role, targetIndex, false, "Idle", null, store);
     }
 
     private Ref<EntityStore> resolveByUuid(Store<EntityStore> store, Ref<EntityStore> playerRef) {
