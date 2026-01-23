@@ -31,7 +31,7 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
-        super("horsefollow", "Bind a horse to follow you", false);
+        super("horsefollow", "Bind a horse to follow you", true);
 
         this.service = service;
         setAllowsExtraArguments(true);
@@ -103,8 +103,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                                 service.bind(playerRef, fallbackHorse);
                                 context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
                             } else {
-                                service.unbind(playerRef);
-                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.mount_first")));
+                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.mount_first")));
                             }
                             break;
                         }
