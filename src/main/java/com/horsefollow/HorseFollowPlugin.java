@@ -15,7 +15,7 @@ public final class HorseFollowPlugin extends JavaPlugin {
 
     public HorseFollowPlugin(@Nonnull JavaPluginInit init) {
         super(init);
-        this.service = new FollowService();
+        this.service = new FollowService(getDataDirectory());
     }
 
     @Override
@@ -39,5 +39,6 @@ public final class HorseFollowPlugin extends JavaPlugin {
             timer.cancel();
             timer = null;
         }
+        service.shutdown();
     }
 }

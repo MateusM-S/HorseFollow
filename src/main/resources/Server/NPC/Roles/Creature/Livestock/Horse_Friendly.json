@@ -12,6 +12,9 @@
     "LovedItems": [
       "Plant_Crop_Carrot_Item"
     ],
+    "GrazingBlockSet": "Empty",
+    "FoodBlockSet": "Empty",
+    "FoodItemSet": [],
     "DropList": "Drop_Horse",
     "MaxHealth": 124,
     "MaxSpeed": 10,

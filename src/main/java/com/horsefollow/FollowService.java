@@ -13,12 +13,20 @@ import com.hypixel.hytale.server.npc.role.Role;
 import com.hypixel.hytale.server.npc.systems.RoleChangeSystem;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +44,12 @@ public final class FollowService {
     private final Map<Ref<EntityStore>, Long> lastTeleportTickByPlayer = new ConcurrentHashMap<>();
     // playerRef -> original role index before friendly swap
     private final Map<Ref<EntityStore>, Integer> originalRoleByPlayer = new ConcurrentHashMap<>();
+    // playerRefs pending friendly role swap (wait until horse is not mounted)
+    private final Set<Ref<EntityStore>> pendingFriendlyRole = ConcurrentHashMap.newKeySet();
+    // playerUuid -> horseUuid (persisted across restarts)
+    private final Map<UUID, UUID> persistedBinds = new ConcurrentHashMap<>();
+    private final Object persistLock = new Object();
+    private final Path bindsFile;
 
     // tuning
     private static final double MAX_DISTANCE = 25.0;
@@ -46,6 +60,11 @@ public final class FollowService {
 
     private long tickCounter = 0L;
 
+    public FollowService(Path dataDirectory) {
+        this.bindsFile = dataDirectory != null ? dataDirectory.resolve("binds.txt") : null;
+        loadPersistedBinds();
+    }
+
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
         if (playerRef == null || horseRef == null) return;
         bound.put(playerRef, horseRef);
@@ -53,9 +72,12 @@ public final class FollowService {
         if (horseUuid != null) {
             boundUuids.put(playerRef, horseUuid);
             debug("bind uuid playerRef=" + playerRef + " horseUuid=" + horseUuid);
+            persistBind(playerRef, horseUuid);
         }
         debug("bind playerRef=" + playerRef + " horseRef=" + horseRef);
-        applyFriendlyRole(playerRef, horseRef);
+        if (!applyFriendlyRole(playerRef, horseRef)) {
+            pendingFriendlyRole.add(playerRef);
+        }
     }
 
     public void unbind(Ref<EntityStore> playerRef) {
@@ -64,10 +86,12 @@ public final class FollowService {
         if (horseRef != null) {
             applyOriginalRole(playerRef, horseRef);
         }
+        clearPersistedBind(playerRef);
         bound.remove(playerRef);
         boundUuids.remove(playerRef);
         lastTeleportTickByPlayer.remove(playerRef);
         originalRoleByPlayer.remove(playerRef);
+        pendingFriendlyRole.remove(playerRef);
         debug("unbind playerRef=" + playerRef);
     }
 
@@ -80,12 +104,14 @@ public final class FollowService {
         return bound.get(playerRef);
     }
 
-    private void applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
-        if (playerRef == null || horseRef == null) return;
+    private boolean applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        if (playerRef == null || horseRef == null) return false;
         Store<EntityStore> store = horseRef.getStore();
-        if (store == null) return;
+        if (store == null) return false;
         EntityStore entityStore = store.getExternalData();
-        worldExecute(entityStore, () -> applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true));
+        AtomicReference<Boolean> applied = new AtomicReference<>(false);
+        worldExecute(entityStore, () -> applied.set(applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)));
+        return applied.get();
     }
 
     private void applyOriginalRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -122,9 +148,9 @@ public final class FollowService {
     }
 
     public void tick() {
-        if (bound.isEmpty()) return;
-
         tickCounter++;
+        rebindPersistedForOnlinePlayers();
+        if (bound.isEmpty()) return;
         long currentTick = tickCounter;
         AtomicInteger teleportsThisTick = new AtomicInteger(0);
 
@@ -136,6 +162,9 @@ public final class FollowService {
             if (!playerRef.isValid()) {
                 bound.remove(playerRef);
                 lastTeleportTickByPlayer.remove(playerRef);
+                boundUuids.remove(playerRef);
+                originalRoleByPlayer.remove(playerRef);
+                pendingFriendlyRole.remove(playerRef);
                 continue;
             }
             if (!horseRef.isValid()) {
@@ -154,6 +183,12 @@ public final class FollowService {
                     if (teleportsThisTick.get() >= MAX_TPS_PER_APPLY) return;
                     Long lastTick = lastTeleportTickByPlayer.get(playerRef);
                     if (lastTick != null && (currentTick - lastTick) < TP_COOLDOWN_TICKS) return;
+
+                    if (pendingFriendlyRole.contains(playerRef)) {
+                        if (applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)) {
+                            pendingFriendlyRole.remove(playerRef);
+                        }
+                    }
 
                     TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
                     TransformComponent horseTf  = store.getComponent(horseRef, TransformComponent.getComponentType());
@@ -198,6 +233,10 @@ public final class FollowService {
             debug("rebind resolved playerRef=" + playerRef + " resolved=" + resolved);
             if (resolved != null && resolved.isValid()) {
                 bound.put(playerRef, resolved);
+                UUID resolvedUuid = tryReadUuid(resolved);
+                if (resolvedUuid != null) {
+                    boundUuids.put(playerRef, resolvedUuid);
+                }
                 applyFriendlyRole(playerRef, resolved);
             } else {
                 bound.remove(playerRef);
@@ -206,49 +245,53 @@ public final class FollowService {
         });
     }
 
-    private void applyRoleChange(
+    private boolean applyRoleChange(
             Store<EntityStore> store,
             Ref<EntityStore> playerRef,
             Ref<EntityStore> horseRef,
             String targetRoleId,
             boolean storeOriginal
     ) {
-        if (store == null || playerRef == null || horseRef == null) return;
-        if (targetRoleId == null || targetRoleId.isBlank()) return;
+        if (store == null || playerRef == null || horseRef == null) return false;
+        if (targetRoleId == null || targetRoleId.isBlank()) return false;
 
         int targetIndex = NPCPlugin.get().getIndex(targetRoleId);
-        if (targetIndex < 0) return;
+        if (targetIndex < 0) return false;
 
-        applyRoleChange(store, playerRef, horseRef, targetIndex, storeOriginal);
+        return applyRoleChange(store, playerRef, horseRef, targetIndex, storeOriginal);
     }
 
-    private void applyRoleChange(
+    private boolean applyRoleChange(
             Store<EntityStore> store,
             Ref<EntityStore> playerRef,
             Ref<EntityStore> horseRef,
             int targetIndex,
             boolean storeOriginal
     ) {
-        if (store == null || playerRef == null || horseRef == null) return;
-        if (targetIndex < 0) return;
+        if (store == null || playerRef == null || horseRef == null) return false;
+        if (targetIndex < 0) return false;
 
         NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
-        if (npc == null) return;
+        if (npc == null) return false;
         Role role = npc.getRole();
-        if (role == null) return;
+        if (role == null) return false;
 
         if (storeOriginal) {
             originalRoleByPlayer.putIfAbsent(playerRef, npc.getRoleIndex());
         }
 
-        if (npc.getRoleIndex() == targetIndex) return;
+        if (npc.getRoleIndex() == targetIndex) return true;
 
         NPCMountComponent npcMount = store.getComponent(horseRef, NPCMountComponent.getComponentType());
+        if (npcMount != null && npcMount.getOwnerPlayerRef() != null) {
+            return false;
+        }
         if (npcMount != null) {
             npcMount.setOriginalRoleIndex(targetIndex);
         }
 
         RoleChangeSystem.requestRoleChange(horseRef, role, targetIndex, false, "Idle", null, store);
+        return true;
     }
 
     private Ref<EntityStore> resolveByUuid(Store<EntityStore> store, Ref<EntityStore> playerRef) {
@@ -342,6 +385,110 @@ public final class FollowService {
         if (store == null) return null;
         UUIDComponent uuidComponent = store.getComponent(entityRef, UUIDComponent.getComponentType());
         return uuidComponent != null ? uuidComponent.getUuid() : null;
+    }
+
+    private static UUID tryReadPlayerUuid(Ref<EntityStore> playerRef) {
+        UUID uuid = tryReadUuid(playerRef);
+        if (uuid != null) return uuid;
+        if (playerRef == null) return null;
+        Store<EntityStore> store = playerRef.getStore();
+        if (store == null) return null;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        return player != null ? player.getUuid() : null;
+    }
+
+    private void persistBind(Ref<EntityStore> playerRef, UUID horseUuid) {
+        if (horseUuid == null) return;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid == null) return;
+        persistedBinds.put(playerUuid, horseUuid);
+        savePersistedBinds();
+    }
+
+    private void clearPersistedBind(Ref<EntityStore> playerRef) {
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid == null) return;
+        if (persistedBinds.remove(playerUuid) != null) {
+            savePersistedBinds();
+        }
+    }
+
+    private void rebindPersistedForOnlinePlayers() {
+        if (persistedBinds.isEmpty()) return;
+        List<PlayerRef> players = Universe.get().getPlayers();
+        for (PlayerRef player : players) {
+            UUID playerUuid = player.getUuid();
+            UUID horseUuid = persistedBinds.get(playerUuid);
+            if (horseUuid == null) continue;
+            Ref<EntityStore> playerRef = player.getReference();
+            if (playerRef == null || !playerRef.isValid()) continue;
+            if (bound.containsKey(playerRef)) continue;
+            Store<EntityStore> store = playerRef.getStore();
+            if (store == null) continue;
+            EntityStore entityStore = store.getExternalData();
+            worldExecute(entityStore, () -> {
+                Ref<EntityStore> horseRef = entityStore.getRefFromUUID(horseUuid);
+                if (horseRef != null && horseRef.isValid()) {
+                    bound.put(playerRef, horseRef);
+                    boundUuids.put(playerRef, horseUuid);
+                    if (!applyFriendlyRole(playerRef, horseRef)) {
+                        pendingFriendlyRole.add(playerRef);
+                    }
+                }
+            });
+        }
+    }
+
+    private void loadPersistedBinds() {
+        if (bindsFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(bindsFile.getParent());
+                if (!Files.exists(bindsFile)) return;
+                List<String> lines = Files.readAllLines(bindsFile, StandardCharsets.UTF_8);
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                    String[] parts = trimmed.split("=", 2);
+                    if (parts.length != 2) continue;
+                    try {
+                        UUID playerUuid = UUID.fromString(parts[0].trim());
+                        UUID horseUuid = UUID.fromString(parts[1].trim());
+                        persistedBinds.put(playerUuid, horseUuid);
+                    } catch (IllegalArgumentException ignored) {
+                        // ignore malformed lines
+                    }
+                }
+            } catch (IOException e) {
+                debug("persist load failed: " + e.getMessage());
+            }
+        }
+    }
+
+    private void savePersistedBinds() {
+        if (bindsFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(bindsFile.getParent());
+                List<String> lines = new ArrayList<>();
+                for (Map.Entry<UUID, UUID> entry : persistedBinds.entrySet()) {
+                    lines.add(entry.getKey() + "=" + entry.getValue());
+                }
+                Path tmp = bindsFile.resolveSibling(bindsFile.getFileName().toString() + ".tmp");
+                Files.write(tmp, lines, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp, bindsFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    Files.move(tmp, bindsFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException e) {
+                debug("persist save failed: " + e.getMessage());
+            }
+        }
+    }
+
+    public void shutdown() {
+        savePersistedBinds();
     }
 
     private static void debug(String message) {
