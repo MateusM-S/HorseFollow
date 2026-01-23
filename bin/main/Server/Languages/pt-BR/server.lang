@@ -1,0 +1,9 @@
+horsefollow.command.only_players=[HorseFollow] O comando so funciona para jogadores.
+horsefollow.command.status.has_bond=[HorseFollow] status: Voce possui 01 vinculo.
+horsefollow.command.status.no_bond=[HorseFollow] status: Voce nao possui vinculos ativos.
+horsefollow.command.unbind.ok=[HorseFollow] O vinculo foi quebrado.
+horsefollow.command.bind.ok=[HorseFollow] O vinculo foi criado com sucesso!
+horsefollow.command.bind.mount_first=[HorseFollow] Monte no cavalo primeiro.
+horsefollow.command.bind.invalid_mount=[HorseFollow] Montaria invalida.
+horsefollow.command.usage=[HorseFollow] uso: /horsefollow [bind|unbind|status]
+horsefollow.command.error=[HorseFollow] erro ao executar (ver server.log).

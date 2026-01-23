@@ -13,6 +13,7 @@ import com.hypixel.hytale.server.core.command.system.arguments.system.OptionalAr
 import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.horsefollow.FollowService;
+import com.horsefollow.Localization;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.Method;
@@ -45,7 +46,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         try {
             playerRef = context.senderAsPlayerRef();
         } catch (Throwable t) {
-            context.sender().sendMessage(Message.raw("[HorseFollow] O comando só funciona para jogadores."));
+            context.sender().sendMessage(Message.raw(Localization.get(null, null, "horsefollow.command.only_players")));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -81,14 +82,14 @@ public final class HorseFollowCommand extends AbstractCommand {
                 switch (actionFinal) {
                     case "status": {
                         boolean bound = service.isBound(playerRef);
-                        context.sender().sendMessage(Message.raw(bound
-                                ? "[HorseFollow] status: Você possui 01 vínculo."
-                                : "[HorseFollow] status: Você não possui vínculos ativos."));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, bound
+                                ? "horsefollow.command.status.has_bond"
+                                : "horsefollow.command.status.no_bond")));
                         break;
                     }
                     case "unbind": {
                         service.unbind(playerRef);
-                        context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi quebrado."));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.unbind.ok")));
                         break;
                     }
                     case "bind": {
@@ -100,10 +101,10 @@ public final class HorseFollowCommand extends AbstractCommand {
                             }
                             if (fallbackHorse != null && fallbackHorse.isValid()) {
                                 service.bind(playerRef, fallbackHorse);
-                                context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi criado com sucesso!"));
+                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
                             } else {
                                 service.unbind(playerRef);
-                            context.sender().sendMessage(Message.raw("[HorseFollow] Monte no cavalo primeiro."));
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.mount_first")));
                             }
                             break;
                         }
@@ -111,7 +112,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                         Ref<EntityStore> horseRef = mounted.getMountedToEntity();
                         if (horseRef == null || !horseRef.isValid()) {
                             service.unbind(playerRef);
-                            context.sender().sendMessage(Message.raw("[HorseFollow] Montaria inválida."));
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.invalid_mount")));
                             break;
                         }
 
@@ -121,17 +122,17 @@ public final class HorseFollowCommand extends AbstractCommand {
                         }
 
                         service.bind(playerRef, horseRef);
-                        context.sender().sendMessage(Message.raw("[HorseFollow] O vínculo foi criado com sucesso!"));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
                         break;
                     }
                     default:
-                        context.sender().sendMessage(Message.raw("[HorseFollow] uso: /horsefollow [bind|unbind|status]"));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.usage")));
                         break;
                 }
             } catch (Throwable t) {
                 // fallback pra não derrubar o servidor
                 try {
-                    context.sender().sendMessage(Message.raw("[HorseFollow] erro ao executar (ver server.log)."));
+                    context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
                 } catch (Throwable ignored) {}
             }
         });

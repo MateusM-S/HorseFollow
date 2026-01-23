@@ -1,0 +1,9 @@
+horsefollow.command.only_players=[HorseFollow] This command only works for players.
+horsefollow.command.status.has_bond=[HorseFollow] status: You have 01 active bond.
+horsefollow.command.status.no_bond=[HorseFollow] status: You have no active bonds.
+horsefollow.command.unbind.ok=[HorseFollow] The bond has been removed.
+horsefollow.command.bind.ok=[HorseFollow] Bond created successfully!
+horsefollow.command.bind.mount_first=[HorseFollow] Mount the horse first.
+horsefollow.command.bind.invalid_mount=[HorseFollow] Invalid mount.
+horsefollow.command.usage=[HorseFollow] usage: /horsefollow [bind|unbind|status]
+horsefollow.command.error=[HorseFollow] Error executing command (see server.log).
