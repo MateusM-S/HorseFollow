@@ -31,13 +31,18 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
-        super("horsefollow", "Bind a horse to follow you", true);
+        super("horsefollow", "Bind a horse to follow you", false);
 
         this.service = service;
         setAllowsExtraArguments(true);
 
         // Argumento posicional opcional
         actionArg = withOptionalArg("action", "bind | unbind | status", ArgTypes.STRING);
+    }
+
+    @Override
+    protected boolean canGeneratePermission() {
+        return false;
     }
 
     @Override
