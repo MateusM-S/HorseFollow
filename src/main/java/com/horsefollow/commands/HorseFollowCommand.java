@@ -27,7 +27,7 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final FollowService service;
 
     // /horsefollow [action]
-    // action: bind | unbind | status
+    // action: bind | unbind | status | distance | call | reload | help
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
@@ -37,7 +37,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         setAllowsExtraArguments(true);
 
         // Argumento posicional opcional
-        actionArg = withOptionalArg("action", "bind | unbind | status", ArgTypes.STRING);
+        actionArg = withOptionalArg("action", "bind | unbind | status | distance | call | reload | help", ArgTypes.STRING);
     }
 
     @Override
@@ -55,28 +55,35 @@ public final class HorseFollowCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
+        String input = context.getInputString();
+        String[] parts = null;
+        int actionIndex = -1;
+        if (input != null) {
+            parts = input.trim().split("\\s+");
+            int idx = 0;
+            if (parts.length > 0) {
+                String first = parts[0];
+                if (first.startsWith("/")) {
+                    first = first.substring(1);
+                }
+                if (first.equalsIgnoreCase(context.getCalledCommand().getName())) {
+                    idx = 1;
+                }
+            }
+            if (parts.length > idx) {
+                actionIndex = idx;
+            }
+        }
+
         String action = actionArg.provided(context) ? actionArg.get(context) : null;
         if (action == null || action.isBlank()) {
-            String input = context.getInputString();
-            if (input != null) {
-                String[] parts = input.trim().split("\\s+");
-                int idx = 0;
-                if (parts.length > 0) {
-                    String first = parts[0];
-                    if (first.startsWith("/")) {
-                        first = first.substring(1);
-                    }
-                    if (first.equalsIgnoreCase(context.getCalledCommand().getName())) {
-                        idx = 1;
-                    }
-                }
-                if (parts.length > idx) {
-                    action = parts[idx];
-                }
+            if (parts != null && actionIndex >= 0 && parts.length > actionIndex) {
+                action = parts[actionIndex];
             }
         }
         action = (action == null || action.isBlank()) ? "status" : action.trim().toLowerCase(Locale.ROOT);
         final String actionFinal = action;
+        final Double distanceValue = parseDistanceToken(parts, actionIndex);
 
         // Tudo que acessa ECS/componentes deve ir para a WorldThread
         Store<EntityStore> store = playerRef.getStore();
@@ -92,12 +99,14 @@ public final class HorseFollowCommand extends AbstractCommand {
                                 : "horsefollow.command.status.no_bond")));
                         break;
                     }
-                    case "unbind": {
+                    case "unbind":
+                    case "desvincular": {
                         service.unbind(playerRef);
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.unbind.ok")));
                         break;
                     }
-                    case "bind": {
+                    case "bind":
+                    case "vincular": {
                         MountedComponent mounted = store.getComponent(playerRef, MountedComponent.getComponentType());
                         if (mounted == null) {
                             Ref<EntityStore> fallbackHorse = findMountFromPassengers(store, playerRef);
@@ -129,6 +138,55 @@ public final class HorseFollowCommand extends AbstractCommand {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
                         break;
                     }
+                    case "distance":
+                    case "distancia": {
+                        if (distanceValue == null || distanceValue < 0) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.distance.invalid")));
+                            break;
+                        }
+                        boolean ok = service.updateTeleportDistance(distanceValue);
+                        if (ok) {
+                            if (distanceValue == 0) {
+                                context.sender().sendMessage(Message.raw(Localization.get(
+                                        store, playerRef, "horsefollow.command.distance.disabled")));
+                            } else {
+                                String template = Localization.get(store, playerRef, "horsefollow.command.distance.ok");
+                                String message = String.format(Locale.ROOT, template, distanceValue);
+                                context.sender().sendMessage(Message.raw(message));
+                            }
+                        } else {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.distance.invalid")));
+                        }
+                        break;
+                    }
+                    case "call":
+                    case "chamar": {
+                        Ref<EntityStore> horseRef = service.getBoundHorse(playerRef);
+                        if (horseRef == null || !horseRef.isValid()) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.call.no_bond")));
+                            break;
+                        }
+                        boolean ok = service.teleportHorseNearPlayer(store, playerRef, horseRef);
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef,
+                                ok ? "horsefollow.command.call.ok" : "horsefollow.command.call.fail")));
+                        break;
+                    }
+                    case "reload":
+                    case "resetar": {
+                        service.reloadConfig();
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.reload.ok")));
+                        break;
+                    }
+                    case "help": {
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.title")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.bind")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.unbind")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.status")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.distance")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.call")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.reload")));
+                        break;
+                    }
                     default:
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.usage")));
                         break;
@@ -142,6 +200,20 @@ public final class HorseFollowCommand extends AbstractCommand {
         });
 
         return CompletableFuture.completedFuture(null);
+    }
+
+    private static Double parseDistanceToken(String[] parts, int actionIndex) {
+        if (parts == null || actionIndex < 0) return null;
+        int valueIndex = actionIndex + 1;
+        if (parts.length <= valueIndex) return null;
+        String raw = parts[valueIndex];
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            String normalized = raw.trim().replace(',', '.');
+            return Double.parseDouble(normalized);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static void worldExecute(Object entityStore, Runnable r) {
