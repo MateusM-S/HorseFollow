@@ -1,0 +1,22 @@
+{
+  "TranslationProperties": {
+    "Name": "server.items.Weapon_Horse_Horn.name"
+  },
+  "Categories": [
+    "Items.Weapons"
+  ],
+  "Model": "Items/HorseHorn/Horn.blockymodel",
+  "Texture": "Items/HorseHorn/horn.png",
+  "Icon": "Icons/ItemsGenerated/horn_icon.png",
+  "Quality": "Rare",
+  "ItemLevel": 1,
+  "Scale": 1.2,
+  "Utility": {
+    "Usable": true
+  },
+  "PlayerAnimationsId": "Horn",
+  "Interactions": {
+    "Secondary": "Root_Horn_Use"
+  }
+}
+

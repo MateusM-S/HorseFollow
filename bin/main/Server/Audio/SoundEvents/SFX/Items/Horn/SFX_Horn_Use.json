@@ -1,0 +1,18 @@
+{
+  "Layers": [
+    {
+      "Looping": false,
+      "Files": [
+        "Sounds/Items/Horn/Horn_Use.ogg"
+      ],
+      "RandomSettings": {
+        "MinPitch": -0.5,
+        "MaxPitch": 0.5
+      }
+    }
+  ],
+  "Volume": 1.0,
+  "PreventSoundInterruption": false,
+  "MaxDistance": 128,
+  "StartAttenuationDistance": 10
+}

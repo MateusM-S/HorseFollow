@@ -7,3 +7,5 @@ horsefollow.command.bind.mount_first=[HorseFollow] Monte no cavalo primeiro.
 horsefollow.command.bind.invalid_mount=[HorseFollow] Montaria invalida.
 horsefollow.command.usage=[HorseFollow] uso: /horsefollow [bind|unbind|status]
 horsefollow.command.error=[HorseFollow] erro ao executar (ver server.log).
+items.Weapon_Horse_Horn.name=Chifre de cabra
+server.items.Weapon_Horse_Horn.name=Chifre de cabra

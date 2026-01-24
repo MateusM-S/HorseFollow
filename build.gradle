@@ -42,37 +42,3 @@ jar {
     archiveFileName = "HorseFollow-${project.version}.jar"
 }
 
-tasks.register('bumpPatchVersion') {
-    doLast {
-        def buildTask = tasks.named('build').get()
-        if (buildTask.state.failure != null) {
-            println('[HorseFollow] build falhou - não incrementou versão.')
-            return
-        }
-
-        def propsFile = file('gradle.properties')
-        def lines = propsFile.readLines('UTF-8')
-
-        def current = project.version.toString().trim()
-        def parts = current.split('\\.')
-        if (parts.length != 3) {
-            throw new GradleException("version inválida: '" + current + "' (esperado X.Y.Z)")
-        }
-
-        def major = Integer.parseInt(parts[0])
-        def minor = Integer.parseInt(parts[1])
-        def patch = Integer.parseInt(parts[2])
-        def next = major + "." + minor + "." + (patch + 1)
-
-        def out = lines.collect { line ->
-            line.startsWith('version=') ? ('version=' + next) : line
-        }.join('\n') + '\n'
-
-        propsFile.write(out, 'UTF-8')
-        println('[HorseFollow] versão incrementada: ' + current + ' -> ' + next)
-    }
-}
-
-tasks.named('build') {
-    finalizedBy('bumpPatchVersion')
-}
