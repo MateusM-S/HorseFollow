@@ -70,6 +70,13 @@ public final class FollowService {
 
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
         if (playerRef == null || horseRef == null) return;
+
+        // garante 1 vinculo por player: se ja existe outro, desvincula (remove follow/role/flock do anterior)
+        Ref<EntityStore> previous = bound.get(playerRef);
+        if (previous != null && previous.isValid() && !previous.equals(horseRef)) {
+            unbind(playerRef);
+        }
+
         bound.put(playerRef, horseRef);
         UUID horseUuid = tryReadUuid(horseRef);
         if (horseUuid != null) {
@@ -635,11 +642,30 @@ public final class FollowService {
     ) {
         if (store == null || playerRef == null || horseRef == null) return false;
 
+        // tenta comparar por UUID (refs podem mudar)
+        PlayerRef playerObj = store.getComponent(playerRef, PlayerRef.getComponentType());
+
+        // via NPCMountComponent no cavalo (owner)
+        NPCMountComponent npcMount = store.getComponent(horseRef, NPCMountComponent.getComponentType());
+        if (npcMount != null && playerObj != null) {
+            PlayerRef owner = npcMount.getOwnerPlayerRef();
+            if (owner != null && owner.getUuid().equals(playerObj.getUuid())) {
+                return true;
+            }
+        }
+
         // via MountedComponent no player
         MountedComponent mounted = store.getComponent(playerRef, MountedComponent.getComponentType());
         if (mounted != null) {
             Ref<EntityStore> mountedTo = mounted.getMountedToEntity();
             if (horseRef.equals(mountedTo)) return true;
+            if (mountedTo != null && mountedTo.isValid()) {
+                UUID mountedUuid = tryReadUuid(mountedTo);
+                UUID horseUuid = tryReadUuid(horseRef);
+                if (mountedUuid != null && horseUuid != null && mountedUuid.equals(horseUuid)) {
+                    return true;
+                }
+            }
         }
 
         // via MountedByComponent no cavalo
@@ -649,6 +675,12 @@ public final class FollowService {
             if (passengers != null) {
                 for (Ref<EntityStore> passenger : passengers) {
                     if (playerRef.equals(passenger)) return true;
+                    if (playerObj != null && passenger != null) {
+                        PlayerRef passengerObj = store.getComponent(passenger, PlayerRef.getComponentType());
+                        if (passengerObj != null && passengerObj.getUuid().equals(playerObj.getUuid())) {
+                            return true;
+                        }
+                    }
                 }
             }
         }
