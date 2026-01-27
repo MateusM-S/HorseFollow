@@ -72,6 +72,10 @@
       "TypeHint": "String",
       "Description": "The set of NPCs belonging to this flock type"
     },
+    "HorseFollowEnabled": {
+      "Value": false,
+      "Description": "If true, this NPC will follow its flock leader while idle (used by HorseFollow mod)."
+    },
     "ClimbHeight": {
       "Value": 1,
       "Description": "The maximum climb height, in blocks."
@@ -540,6 +544,42 @@
               }
             }
           ]
+        },
+        {
+          "$Comment": "HorseFollow: Follow flock leader while idle (Seek).",
+          "Enabled": {
+            "Compute": "HorseFollowEnabled && !isEmptyStringArray(FlockArray)"
+          },
+          "Continue": true,
+          "Sensor": {
+            "Type": "And",
+            "Sensors": [
+              {
+                "Type": "State",
+                "State": "Idle"
+              },
+              {
+                "Type": "FlockLeader"
+              },
+              {
+                "Type": "Self",
+                "Filters": [
+                  {
+                    "Type": "Flock",
+                    "FlockStatus": "Follower"
+                  }
+                ]
+              }
+            ]
+          },
+          "HeadMotion": {
+            "Type": "Watch"
+          },
+          "BodyMotion": {
+            "Type": "Seek",
+            "SlowDownDistance": 7,
+            "StopDistance": 4
+          }
         },
         {
           "$Comment": "Join eligible flocks if not a member of a flock.",

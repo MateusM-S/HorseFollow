@@ -84,7 +84,14 @@ public final class FollowService {
         Store<EntityStore> store = horseRef.getStore();
         if (store != null) {
             EntityStore entityStore = store.getExternalData();
-            worldExecute(entityStore, () -> ensureFollowFlock(store, playerRef, horseRef));
+            worldExecute(entityStore, () -> {
+                // evita conflito com montaria: só ativa flock-follow quando desmontado
+                if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
+                    store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+                    return;
+                }
+                ensureFollowFlock(store, playerRef, horseRef);
+            });
         }
     }
 
@@ -217,6 +224,15 @@ public final class FollowService {
             // IMPORTANTÍSSIMO: acesso ECS dentro do world.execute(...)
             worldExecute(entityStore, () -> {
                 try {
+                    // evita conflito com montaria: quando montado, remove flock do cavalo (desliga follow)
+                    if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
+                        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+                        return;
+                    }
+
+                    // garante que (desmontado) existe flock e o player é o líder
+                    ensureFollowFlock(store, playerRef, horseRef);
+
                     if (teleportsThisTick.get() >= maxTeleportsPerTick) return;
                     Long lastTick = lastTeleportTickByPlayer.get(playerRef);
                     if (lastTick != null && (currentTick - lastTick) < tpCooldownTicks) return;
@@ -572,6 +588,8 @@ public final class FollowService {
         }
 
         if (playerFlockRef != null && playerFlockRef.equals(horseFlockRef)) {
+            // já estão no mesmo flock; tenta reforçar papeis (leader/member)
+            ensureFlockRoles(store, playerRef, horseRef, playerFlockRef);
             return;
         }
 
@@ -587,6 +605,55 @@ public final class FollowService {
         if (horseFlockRef == null || !targetFlockRef.equals(horseFlockRef)) {
             FlockMembershipSystems.join(horseRef, targetFlockRef, store);
         }
+
+        ensureFlockRoles(store, playerRef, horseRef, targetFlockRef);
+    }
+
+    private static void ensureFlockRoles(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> horseRef,
+            Ref<EntityStore> flockRef
+    ) {
+        if (store == null || playerRef == null || horseRef == null || flockRef == null) return;
+
+        FlockMembership pm = store.getComponent(playerRef, FlockMembership.getComponentType());
+        if (pm != null && flockRef.equals(pm.getFlockRef())) {
+            pm.setMembershipType(FlockMembership.Type.LEADER);
+        }
+
+        FlockMembership hm = store.getComponent(horseRef, FlockMembership.getComponentType());
+        if (hm != null && flockRef.equals(hm.getFlockRef())) {
+            hm.setMembershipType(FlockMembership.Type.MEMBER);
+        }
+    }
+
+    private static boolean isPlayerMountedOnHorse(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> horseRef
+    ) {
+        if (store == null || playerRef == null || horseRef == null) return false;
+
+        // via MountedComponent no player
+        MountedComponent mounted = store.getComponent(playerRef, MountedComponent.getComponentType());
+        if (mounted != null) {
+            Ref<EntityStore> mountedTo = mounted.getMountedToEntity();
+            if (horseRef.equals(mountedTo)) return true;
+        }
+
+        // via MountedByComponent no cavalo
+        MountedByComponent mountedBy = store.getComponent(horseRef, MountedByComponent.getComponentType());
+        if (mountedBy != null) {
+            List<Ref<EntityStore>> passengers = mountedBy.getPassengers();
+            if (passengers != null) {
+                for (Ref<EntityStore> passenger : passengers) {
+                    if (playerRef.equals(passenger)) return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void debug(String message) {

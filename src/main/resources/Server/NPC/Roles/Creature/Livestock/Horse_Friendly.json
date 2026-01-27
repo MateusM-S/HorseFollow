@@ -5,6 +5,7 @@
     "Appearance": "Horse",
     "AttitudeGroup": "PreyBig",
     "PlayerDefaultAttitude": "Revered",
+    "HorseFollowEnabled": true,
     "FlockArray": [
       "Horse",
       "Horse_Foal"
