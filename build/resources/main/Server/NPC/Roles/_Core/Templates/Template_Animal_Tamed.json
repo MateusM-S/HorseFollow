@@ -31,7 +31,7 @@
       "Description": "The range within which the target can be seen/sensed when the NPC is alerted to their presence, in blocks. Should be higher than sense ranges."
     },
     "AlertedActionRange": {
-      "Value": 12,
+      "Value": 8,
       "Description": "The range at which an NPC will react to other NPCs and players, depending on the attitude towards them, in blocks. Should be higher than AbsoluteDetectionRange."
     },
     "LeashDistance": {
@@ -2415,7 +2415,9 @@
                     "SlowDownDistance": {
                       "Compute": "AlertedActionRange"
                     },
-                    "StopDistance": 3,
+                    "StopDistance": {
+                      "Compute": "AlertedActionRange * 0.5"
+                    },
                     "RelativeSpeed": 0.4,
                     "RelaxedMoveConstraints": false
                   }

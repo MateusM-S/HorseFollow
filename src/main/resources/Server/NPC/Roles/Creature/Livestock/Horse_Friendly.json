@@ -18,7 +18,7 @@
     "DropList": "Drop_Horse",
     "MaxHealth": 124,
     "MaxSpeed": 10,
-    "ViewRange": 20,
+    "ViewRange": 15,
     "AttackWhenStartled": true,
     "Attack": "Root_NPC_Attack_Melee",
     "ChanceToTurnFriendly": 30,

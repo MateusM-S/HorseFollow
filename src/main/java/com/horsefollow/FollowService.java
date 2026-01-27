@@ -7,9 +7,6 @@ import com.hypixel.hytale.component.Archetype;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
-import com.hypixel.hytale.server.flock.FlockMembership;
-import com.hypixel.hytale.server.flock.FlockMembershipSystems;
-import com.hypixel.hytale.server.flock.FlockPlugin;
 import com.hypixel.hytale.server.npc.NPCPlugin;
 import com.hypixel.hytale.server.npc.entities.NPCEntity;
 import com.hypixel.hytale.server.npc.role.Role;
@@ -55,16 +52,16 @@ public final class FollowService {
     private final Path bindsFile;
 
     // tuning
+    private static final double MAX_DISTANCE = 25.0;
+    private static final double BEHIND_OFFSET = 3.0;
+    private static final int MAX_TPS_PER_APPLY = 2;
+    private static final int TP_COOLDOWN_TICKS = 200;
     private static final String FRIENDLY_ROLE_ID = "Horse_Friendly";
 
     private long tickCounter = 0L;
-    private final AtomicReference<FollowConfig> configRef = new AtomicReference<>(FollowConfig.defaults());
-    private final Path configFile;
 
     public FollowService(Path dataDirectory) {
         this.bindsFile = dataDirectory != null ? dataDirectory.resolve("binds.txt") : null;
-        this.configFile = dataDirectory != null ? dataDirectory.resolve("config.properties") : null;
-        reloadConfig();
         loadPersistedBinds();
     }
 
@@ -81,11 +78,6 @@ public final class FollowService {
         if (!applyFriendlyRole(playerRef, horseRef)) {
             pendingFriendlyRole.add(playerRef);
         }
-        Store<EntityStore> store = horseRef.getStore();
-        if (store != null) {
-            EntityStore entityStore = store.getExternalData();
-            worldExecute(entityStore, () -> ensureFollowFlock(store, playerRef, horseRef));
-        }
     }
 
     public void unbind(Ref<EntityStore> playerRef) {
@@ -93,12 +85,6 @@ public final class FollowService {
         Ref<EntityStore> horseRef = bound.get(playerRef);
         if (horseRef != null) {
             applyOriginalRole(playerRef, horseRef);
-            Store<EntityStore> store = horseRef.getStore();
-            if (store != null) {
-                EntityStore entityStore = store.getExternalData();
-                worldExecute(entityStore, () ->
-                        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType()));
-            }
         }
         clearPersistedBind(playerRef);
         bound.remove(playerRef);
@@ -116,23 +102,6 @@ public final class FollowService {
     public Ref<EntityStore> getBoundHorse(Ref<EntityStore> playerRef) {
         if (playerRef == null) return null;
         return bound.get(playerRef);
-    }
-
-    public FollowConfig getConfig() {
-        return configRef.get();
-    }
-
-    public void reloadConfig() {
-        FollowConfig config = FollowConfig.load(configFile);
-        configRef.set(config);
-    }
-
-    public boolean updateTeleportDistance(double value) {
-        if (value < 0) return false;
-        FollowConfig updated = configRef.get().withTeleportDistance(value);
-        configRef.set(updated);
-        updated.save(configFile);
-        return true;
     }
 
     private boolean applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -184,11 +153,6 @@ public final class FollowService {
         if (bound.isEmpty()) return;
         long currentTick = tickCounter;
         AtomicInteger teleportsThisTick = new AtomicInteger(0);
-        FollowConfig config = configRef.get();
-        double maxDistance = config.getTeleportDistance();
-        double behindOffset = config.getBehindOffset();
-        int maxTeleportsPerTick = config.getMaxTeleportsPerTick();
-        int tpCooldownTicks = config.getTpCooldownTicks();
 
         for (Map.Entry<Ref<EntityStore>, Ref<EntityStore>> e : bound.entrySet()) {
             Ref<EntityStore> playerRef = e.getKey();
@@ -211,15 +175,14 @@ public final class FollowService {
 
             // usa o store do horseRef (normalmente é o mesmo store/mundo do playerRef)
             Store<EntityStore> store = horseRef.getStore();
-            if (store == null) continue;
             EntityStore entityStore = store.getExternalData();
 
             // IMPORTANTÍSSIMO: acesso ECS dentro do world.execute(...)
             worldExecute(entityStore, () -> {
                 try {
-                    if (teleportsThisTick.get() >= maxTeleportsPerTick) return;
+                    if (teleportsThisTick.get() >= MAX_TPS_PER_APPLY) return;
                     Long lastTick = lastTeleportTickByPlayer.get(playerRef);
-                    if (lastTick != null && (currentTick - lastTick) < tpCooldownTicks) return;
+                    if (lastTick != null && (currentTick - lastTick) < TP_COOLDOWN_TICKS) return;
 
                     if (pendingFriendlyRole.contains(playerRef)) {
                         if (applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)) {
@@ -235,16 +198,14 @@ public final class FollowService {
                     Vector3d h = horseTf.getPosition();
                     if (p == null || h == null) return;
 
-                    if (maxDistance <= 0) return;
-
                     double dx = p.getX() - h.getX();
                     double dy = p.getY() - h.getY();
                     double dz = p.getZ() - h.getZ();
                     double distSq = dx * dx + dy * dy + dz * dz;
 
-                    if (distSq <= (maxDistance * maxDistance)) return;
+                    if (distSq <= (MAX_DISTANCE * MAX_DISTANCE)) return;
 
-                    Vector3d target = new Vector3d(p.getX(), p.getY(), p.getZ() - behindOffset);
+                    Vector3d target = new Vector3d(p.getX(), p.getY(), p.getZ() - BEHIND_OFFSET);
                     horseTf.teleportPosition(target);
                     lastTeleportTickByPlayer.put(playerRef, currentTick);
                     teleportsThisTick.incrementAndGet();
@@ -254,24 +215,6 @@ public final class FollowService {
                 }
             });
         }
-    }
-
-    public boolean teleportHorseNearPlayer(
-            Store<EntityStore> store,
-            Ref<EntityStore> playerRef,
-            Ref<EntityStore> horseRef
-    ) {
-        if (store == null || playerRef == null || horseRef == null) return false;
-        TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
-        TransformComponent horseTf = store.getComponent(horseRef, TransformComponent.getComponentType());
-        if (playerTf == null || horseTf == null) return false;
-        Vector3d p = playerTf.getPosition();
-        if (p == null) return false;
-        FollowConfig config = configRef.get();
-        Vector3d target = new Vector3d(p.getX(), p.getY(), p.getZ() - config.getBehindOffset());
-        horseTf.teleportPosition(target);
-        lastTeleportTickByPlayer.put(playerRef, tickCounter);
-        return true;
     }
 
     private void tryRebind(Ref<EntityStore> playerRef) {
@@ -295,7 +238,6 @@ public final class FollowService {
                     boundUuids.put(playerRef, resolvedUuid);
                 }
                 applyFriendlyRole(playerRef, resolved);
-                ensureFollowFlock(store, playerRef, resolved);
             } else {
                 bound.remove(playerRef);
                 boundUuids.remove(playerRef);
@@ -492,7 +434,6 @@ public final class FollowService {
                     if (!applyFriendlyRole(playerRef, horseRef)) {
                         pendingFriendlyRole.add(playerRef);
                     }
-                    ensureFollowFlock(store, playerRef, horseRef);
                 }
             });
         }
@@ -548,45 +489,6 @@ public final class FollowService {
 
     public void shutdown() {
         savePersistedBinds();
-    }
-
-    private static void ensureFollowFlock(
-            Store<EntityStore> store,
-            Ref<EntityStore> playerRef,
-            Ref<EntityStore> horseRef
-    ) {
-        if (store == null || playerRef == null || horseRef == null) return;
-        NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
-        if (npc == null || npc.getRole() == null) return;
-
-        FlockMembership playerMembership = store.getComponent(playerRef, FlockMembership.getComponentType());
-        Ref<EntityStore> playerFlockRef = playerMembership != null ? playerMembership.getFlockRef() : null;
-        if (playerFlockRef != null && !playerFlockRef.isValid()) {
-            playerFlockRef = null;
-        }
-
-        FlockMembership horseMembership = store.getComponent(horseRef, FlockMembership.getComponentType());
-        Ref<EntityStore> horseFlockRef = horseMembership != null ? horseMembership.getFlockRef() : null;
-        if (horseFlockRef != null && !horseFlockRef.isValid()) {
-            horseFlockRef = null;
-        }
-
-        if (playerFlockRef != null && playerFlockRef.equals(horseFlockRef)) {
-            return;
-        }
-
-        Ref<EntityStore> targetFlockRef = playerFlockRef != null ? playerFlockRef : horseFlockRef;
-        if (targetFlockRef == null) {
-            targetFlockRef = FlockPlugin.createFlock(store, npc.getRole());
-        }
-        if (targetFlockRef == null) return;
-
-        if (playerFlockRef == null || !targetFlockRef.equals(playerFlockRef)) {
-            FlockMembershipSystems.join(playerRef, targetFlockRef, store);
-        }
-        if (horseFlockRef == null || !targetFlockRef.equals(horseFlockRef)) {
-            FlockMembershipSystems.join(horseRef, targetFlockRef, store);
-        }
     }
 
     private static void debug(String message) {
