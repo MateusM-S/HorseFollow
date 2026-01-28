@@ -29,8 +29,8 @@
     "IsMemory": true,
     "IsMountable": true,
     "MountAnchorX": 0,
-    "MountAnchorY": 1.3,
-    "MountAnchorZ": 0.2,
+    "MountAnchorY": 0.5,
+    "MountAnchorZ": 1.0,
     "_InteractionVars": {
       "Melee_Start": {
         "Interactions": [

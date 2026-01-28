@@ -52,17 +52,21 @@ public final class FollowService {
     // playerRefs pending friendly role swap (wait until horse is not mounted)
     private final Set<Ref<EntityStore>> pendingFriendlyRole = ConcurrentHashMap.newKeySet();
     // playerRefs pending stay request (wait until horse is not mounted)
-    private final Set<Ref<EntityStore>> pendingStay = ConcurrentHashMap.newKeySet();
+    // value = anchor position; when null, anchor is captured at apply-time (after dismount)
+    private final Map<Ref<EntityStore>, Vector3d> pendingStayAnchorByPlayer = new ConcurrentHashMap<>();
 
     // playerRef -> stay state (anchor position, horse uuid, last damage time snapshot)
     private final Map<Ref<EntityStore>, StayState> stayByPlayer = new ConcurrentHashMap<>();
     // playerUuid -> horseUuid (persisted across restarts)
     private final Map<UUID, UUID> persistedBinds = new ConcurrentHashMap<>();
+    // playerUuid -> persisted stay (horseUuid + anchor)
+    private final Map<UUID, PersistedStay> persistedStay = new ConcurrentHashMap<>();
     private final Object persistLock = new Object();
     private final Path bindsFile;
+    private final Path stayFile;
 
     // tuning
-    private static final String FRIENDLY_ROLE_ID = "Horse_Friendly";
+    private static final String FRIENDLY_SUFFIX = "_Friendly";
     private static final double STAY_MAX_DRIFT_BLOCKS = 0.5;
     private static final double STAY_MAX_DRIFT_SQ = STAY_MAX_DRIFT_BLOCKS * STAY_MAX_DRIFT_BLOCKS;
 
@@ -82,6 +86,16 @@ public final class FollowService {
         }
     }
 
+    private static final class PersistedStay {
+        private final UUID horseUuid;
+        private final Vector3d anchor;
+
+        private PersistedStay(UUID horseUuid, Vector3d anchor) {
+            this.horseUuid = horseUuid;
+            this.anchor = anchor;
+        }
+    }
+
     public enum StayRequestResult {
         APPLIED,
         QUEUED,
@@ -90,9 +104,11 @@ public final class FollowService {
 
     public FollowService(Path dataDirectory) {
         this.bindsFile = dataDirectory != null ? dataDirectory.resolve("binds.txt") : null;
+        this.stayFile = dataDirectory != null ? dataDirectory.resolve("stay.txt") : null;
         this.configFile = dataDirectory != null ? dataDirectory.resolve("config.properties") : null;
         reloadConfig();
         loadPersistedBinds();
+        loadPersistedStay();
     }
 
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -107,7 +123,7 @@ public final class FollowService {
         bound.put(playerRef, horseRef);
         // novo bind: garante que não fica em "stay" do vínculo anterior
         stayByPlayer.remove(playerRef);
-        pendingStay.remove(playerRef);
+        pendingStayAnchorByPlayer.remove(playerRef);
         UUID horseUuid = tryReadUuid(horseRef);
         if (horseUuid != null) {
             boundUuids.put(playerRef, horseUuid);
@@ -123,6 +139,24 @@ public final class FollowService {
             EntityStore entityStore = store.getExternalData();
             worldExecute(entityStore, () -> {
                 // evita conflito com montaria: só ativa flock-follow quando desmontado
+                UUID playerUuid = tryReadPlayerUuid(playerRef);
+                PersistedStay ps = (playerUuid != null) ? persistedStay.get(playerUuid) : null;
+                boolean hasPersistedStayForThisHorse = ps != null
+                        && ps.horseUuid != null
+                        && ps.horseUuid.equals(tryReadUuid(horseRef))
+                        && ps.anchor != null;
+
+                if (hasPersistedStayForThisHorse) {
+                    // Se entrou com stay persistido, aplica (ou deixa pendente se estiver montado).
+                    if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
+                        pendingStayAnchorByPlayer.put(playerRef, ps.anchor);
+                        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+                        return;
+                    }
+                    applyStayAtAnchor(store, playerRef, horseRef, ps.anchor);
+                    return;
+                }
+
                 if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
                     store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
                     return;
@@ -145,7 +179,8 @@ public final class FollowService {
             }
         }
         stayByPlayer.remove(playerRef);
-        pendingStay.remove(playerRef);
+        pendingStayAnchorByPlayer.remove(playerRef);
+        clearPersistedStay(playerRef);
         clearPersistedBind(playerRef);
         bound.remove(playerRef);
         boundUuids.remove(playerRef);
@@ -178,7 +213,8 @@ public final class FollowService {
             if (store == null) return StayRequestResult.FAIL;
 
             if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
-                pendingStay.add(playerRef);
+                // pendente: aplica quando desmontar, capturando o ponto no momento da aplicação
+                pendingStayAnchorByPlayer.put(playerRef, null);
                 return StayRequestResult.QUEUED;
             }
             return applyStayNow(store, playerRef, horseRef) ? StayRequestResult.APPLIED : StayRequestResult.FAIL;
@@ -193,7 +229,8 @@ public final class FollowService {
     public void clearStay(Ref<EntityStore> playerRef) {
         if (playerRef == null) return;
         stayByPlayer.remove(playerRef);
-        pendingStay.remove(playerRef);
+        pendingStayAnchorByPlayer.remove(playerRef);
+        clearPersistedStay(playerRef);
     }
 
     public boolean isBound(Ref<EntityStore> playerRef) {
@@ -228,8 +265,55 @@ public final class FollowService {
         if (store == null) return false;
         EntityStore entityStore = store.getExternalData();
         AtomicReference<Boolean> applied = new AtomicReference<>(false);
-        worldExecute(entityStore, () -> applied.set(applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)));
+        worldExecute(entityStore, () -> applied.set(tryApplyFriendlyRoleNow(store, playerRef, horseRef, true)));
         return applied.get();
+    }
+
+    private boolean tryApplyFriendlyRoleNow(
+            Store<EntityStore> store,
+            Ref<EntityStore> playerRef,
+            Ref<EntityStore> horseRef,
+            boolean storeOriginal
+    ) {
+        if (store == null || playerRef == null || horseRef == null) return false;
+        String friendlyId = resolveFriendlyRoleId(store, playerRef, horseRef);
+        if (friendlyId == null) {
+            // Não existe role _Friendly para esta entidade. Não deixa pendente.
+            return true;
+        }
+        return applyRoleChange(store, playerRef, horseRef, friendlyId, storeOriginal);
+    }
+
+    private String resolveFriendlyRoleId(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        String base = resolveBaseRoleName(store, playerRef, horseRef);
+        if (base == null) return null;
+        String candidate = base + FRIENDLY_SUFFIX;
+        int idx = NPCPlugin.get().getIndex(candidate);
+        return idx >= 0 ? candidate : null;
+    }
+
+    private String resolveBaseRoleName(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        if (store == null || horseRef == null) return null;
+
+        // Preferir o "original" se já conhecido (garante que não vira Foo_Friendly_Friendly)
+        Integer originalIndex = (playerRef != null) ? originalRoleByPlayer.get(playerRef) : null;
+        int roleIndex = -1;
+        if (originalIndex != null) {
+            roleIndex = originalIndex;
+        } else {
+            NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
+            if (npc != null) {
+                roleIndex = npc.getRoleIndex();
+            }
+        }
+        if (roleIndex < 0) return null;
+
+        String name = NPCPlugin.get().getName(roleIndex);
+        if (name == null || name.isBlank()) return null;
+        if (name.endsWith(FRIENDLY_SUFFIX)) {
+            return name.substring(0, name.length() - FRIENDLY_SUFFIX.length());
+        }
+        return name;
     }
 
     private void applyOriginalRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -239,7 +323,14 @@ public final class FollowService {
         EntityStore entityStore = store.getExternalData();
         worldExecute(entityStore, () -> {
             Integer originalIndex = originalRoleByPlayer.get(playerRef);
-            int targetIndex = originalIndex != null ? originalIndex : NPCPlugin.get().getIndex("Horse");
+            int targetIndex;
+            if (originalIndex != null) {
+                targetIndex = originalIndex;
+            } else {
+                // fallback: restaura para o role base do próprio NPC (Horse/Ram/...)
+                String baseName = resolveBaseRoleName(store, playerRef, horseRef);
+                targetIndex = baseName != null ? NPCPlugin.get().getIndex(baseName) : -1;
+            }
             if (targetIndex < 0) return;
             applyRoleChange(store, playerRef, horseRef, targetIndex, false);
         });
@@ -288,7 +379,7 @@ public final class FollowService {
                 boundUuids.remove(playerRef);
                 originalRoleByPlayer.remove(playerRef);
                 pendingFriendlyRole.remove(playerRef);
-                pendingStay.remove(playerRef);
+                pendingStayAnchorByPlayer.remove(playerRef);
                 stayByPlayer.remove(playerRef);
                 continue;
             }
@@ -307,10 +398,15 @@ public final class FollowService {
             worldExecute(entityStore, () -> {
                 try {
                     // Se o player pediu "stay" enquanto estava montado, aplica quando desmontar.
-                    if (pendingStay.contains(playerRef)) {
+                    if (pendingStayAnchorByPlayer.containsKey(playerRef)) {
                         if (!isPlayerMountedOnHorse(store, playerRef, horseRef)) {
-                            applyStayNow(store, playerRef, horseRef);
-                            pendingStay.remove(playerRef);
+                            Vector3d anchor = pendingStayAnchorByPlayer.get(playerRef);
+                            if (anchor != null) {
+                                applyStayAtAnchor(store, playerRef, horseRef, anchor);
+                            } else {
+                                applyStayNow(store, playerRef, horseRef);
+                            }
+                            pendingStayAnchorByPlayer.remove(playerRef);
                         }
                     }
 
@@ -322,7 +418,8 @@ public final class FollowService {
                             UUID currentUuid = tryReadUuid(horseRef);
                             if (currentUuid != null && !currentUuid.equals(stay.horseUuid)) {
                                 stayByPlayer.remove(playerRef);
-                                pendingStay.remove(playerRef);
+                                pendingStayAnchorByPlayer.remove(playerRef);
+                                clearPersistedStay(playerRef);
                                 // continua fluxo normal
                                 stay = null;
                             }
@@ -334,16 +431,17 @@ public final class FollowService {
                         // Se montou, o stay deve sair imediatamente
                         if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
                             stayByPlayer.remove(playerRef);
-                            pendingStay.remove(playerRef);
+                            pendingStayAnchorByPlayer.remove(playerRef);
+                            clearPersistedStay(playerRef);
                             store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
                             return;
                         }
 
                         // Mesmo em stay, tente aplicar role amigável pendente (não depende de follow)
                         if (pendingFriendlyRole.contains(playerRef)) {
-                            if (applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)) {
-                                pendingFriendlyRole.remove(playerRef);
-                            }
+                        if (tryApplyFriendlyRoleNow(store, playerRef, horseRef, true)) {
+                            pendingFriendlyRole.remove(playerRef);
+                        }
                         }
 
                         // Se o cavalo tomou dano desde que o stay foi setado, sai do stay.
@@ -351,11 +449,13 @@ public final class FollowService {
                         Instant lastDamage = (dmg != null) ? dmg.getLastDamageTime() : null;
                         if (lastDamage != null && stay.lastDamageTimeAtSet != null && lastDamage.isAfter(stay.lastDamageTimeAtSet)) {
                             stayByPlayer.remove(playerRef);
+                            clearPersistedStay(playerRef);
                             forceNpcIdleState(store, horseRef);
                             // continua fluxo normal (follow/teleporte) neste tick
                         } else if (lastDamage != null && stay.lastDamageTimeAtSet == null) {
                             // se não tínhamos snapshot e agora tem, considera que houve "atividade" e libera
                             stayByPlayer.remove(playerRef);
+                            clearPersistedStay(playerRef);
                             forceNpcIdleState(store, horseRef);
                         } else {
                             // mantém parado: remove flock-follow e teleporta de volta se driftar
@@ -393,7 +493,7 @@ public final class FollowService {
                     if (lastTick != null && (currentTick - lastTick) < tpCooldownTicks) return;
 
                     if (pendingFriendlyRole.contains(playerRef)) {
-                        if (applyRoleChange(store, playerRef, horseRef, FRIENDLY_ROLE_ID, true)) {
+                        if (tryApplyFriendlyRoleNow(store, playerRef, horseRef, true)) {
                             pendingFriendlyRole.remove(playerRef);
                         }
                     }
@@ -435,7 +535,8 @@ public final class FollowService {
         if (store == null || playerRef == null || horseRef == null) return false;
         // chamar a montaria cancela o "stay"
         stayByPlayer.remove(playerRef);
-        pendingStay.remove(playerRef);
+        pendingStayAnchorByPlayer.remove(playerRef);
+        clearPersistedStay(playerRef);
         forceNpcIdleState(store, horseRef);
         TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
         TransformComponent horseTf = store.getComponent(horseRef, TransformComponent.getComponentType());
@@ -485,8 +586,27 @@ public final class FollowService {
         UUID horseUuid = tryReadUuid(horseRef);
         Vector3d anchor = new Vector3d(pos.getX(), pos.getY(), pos.getZ());
         stayByPlayer.put(playerRef, new StayState(horseUuid, anchor, lastDamage));
+        persistStay(playerRef, horseUuid, anchor);
 
         // desliga follow
+        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+        return true;
+    }
+
+    private boolean applyStayAtAnchor(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef, Vector3d anchor) {
+        if (store == null || playerRef == null || horseRef == null || anchor == null) return false;
+        // snapshot do último dano (para sair do stay ao tomar dano)
+        DamageDataComponent dmg = store.getComponent(horseRef, DamageDataComponent.getComponentType());
+        Instant lastDamage = (dmg != null) ? dmg.getLastDamageTime() : null;
+        UUID horseUuid = tryReadUuid(horseRef);
+        Vector3d fixed = new Vector3d(anchor.getX(), anchor.getY(), anchor.getZ());
+        stayByPlayer.put(playerRef, new StayState(horseUuid, fixed, lastDamage));
+        persistStay(playerRef, horseUuid, fixed);
+
+        TransformComponent horseTf = store.getComponent(horseRef, TransformComponent.getComponentType());
+        if (horseTf != null) {
+            horseTf.teleportPosition(fixed);
+        }
         store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
         return true;
     }
@@ -521,10 +641,94 @@ public final class FollowService {
             } else {
                 bound.remove(playerRef);
                 boundUuids.remove(playerRef);
-                pendingStay.remove(playerRef);
+                pendingStayAnchorByPlayer.remove(playerRef);
                 stayByPlayer.remove(playerRef);
+                clearPersistedStay(playerRef);
             }
         });
+    }
+
+    private void persistStay(Ref<EntityStore> playerRef, UUID horseUuid, Vector3d anchor) {
+        if (horseUuid == null || anchor == null) return;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid == null) return;
+        persistedStay.put(playerUuid, new PersistedStay(horseUuid, anchor));
+        savePersistedStay();
+    }
+
+    private void clearPersistedStay(Ref<EntityStore> playerRef) {
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid == null) return;
+        if (persistedStay.remove(playerUuid) != null) {
+            savePersistedStay();
+        }
+    }
+
+    private void loadPersistedStay() {
+        if (stayFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(stayFile.getParent());
+                if (!Files.exists(stayFile)) return;
+                List<String> lines = Files.readAllLines(stayFile, StandardCharsets.UTF_8);
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                    // format: playerUuid=horseUuid@x,y,z
+                    String[] parts = trimmed.split("=", 2);
+                    if (parts.length != 2) continue;
+                    UUID playerUuid;
+                    try {
+                        playerUuid = UUID.fromString(parts[0].trim());
+                    } catch (IllegalArgumentException ignored) {
+                        continue;
+                    }
+                    String rhs = parts[1].trim();
+                    String[] stayParts = rhs.split("@", 2);
+                    if (stayParts.length != 2) continue;
+                    UUID horseUuid;
+                    try {
+                        horseUuid = UUID.fromString(stayParts[0].trim());
+                    } catch (IllegalArgumentException ignored) {
+                        continue;
+                    }
+                    String[] xyz = stayParts[1].split(",", 3);
+                    if (xyz.length != 3) continue;
+                    double x = Double.parseDouble(xyz[0].trim());
+                    double y = Double.parseDouble(xyz[1].trim());
+                    double z = Double.parseDouble(xyz[2].trim());
+                    persistedStay.put(playerUuid, new PersistedStay(horseUuid, new Vector3d(x, y, z)));
+                }
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
+    }
+
+    private void savePersistedStay() {
+        if (stayFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(stayFile.getParent());
+                List<String> lines = new ArrayList<>();
+                for (Map.Entry<UUID, PersistedStay> entry : persistedStay.entrySet()) {
+                    PersistedStay ps = entry.getValue();
+                    if (ps == null || ps.horseUuid == null || ps.anchor == null) continue;
+                    lines.add(entry.getKey()
+                            + "=" + ps.horseUuid
+                            + "@" + ps.anchor.getX() + "," + ps.anchor.getY() + "," + ps.anchor.getZ());
+                }
+                Path tmp = stayFile.resolveSibling(stayFile.getFileName().toString() + ".tmp");
+                Files.write(tmp, lines, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp, stayFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    Files.move(tmp, stayFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException ignored) {
+                // best effort
+            }
+        }
     }
 
     private boolean applyRoleChange(
@@ -716,7 +920,18 @@ public final class FollowService {
                     if (!applyFriendlyRole(playerRef, horseRef)) {
                         pendingFriendlyRole.add(playerRef);
                     }
-                    ensureFollowFlock(store, playerRef, horseRef);
+                    PersistedStay ps = persistedStay.get(playerUuid);
+                    boolean hasStay = ps != null && horseUuid.equals(ps.horseUuid) && ps.anchor != null;
+                    if (hasStay) {
+                        if (isPlayerMountedOnHorse(store, playerRef, horseRef)) {
+                            pendingStayAnchorByPlayer.put(playerRef, ps.anchor);
+                            store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+                        } else {
+                            applyStayAtAnchor(store, playerRef, horseRef, ps.anchor);
+                        }
+                    } else {
+                        ensureFollowFlock(store, playerRef, horseRef);
+                    }
                 }
             });
         }
@@ -772,6 +987,7 @@ public final class FollowService {
 
     public void shutdown() {
         savePersistedBinds();
+        savePersistedStay();
     }
 
     private static void ensureFollowFlock(
