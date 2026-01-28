@@ -27,7 +27,7 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final FollowService service;
 
     // /horsefollow [action]
-    // action: bind | unbind | status | distance | call | reload | help
+    // action: bind | unbind | status | distance | call | stay | reload | help
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
@@ -37,7 +37,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         setAllowsExtraArguments(true);
 
         // Argumento posicional opcional
-        actionArg = withOptionalArg("action", "bind | unbind | status | distance | call | reload | help", ArgTypes.STRING);
+        actionArg = withOptionalArg("action", "bind | unbind | status | distance | call | stay | reload | help", ArgTypes.STRING);
     }
 
     @Override
@@ -81,7 +81,8 @@ public final class HorseFollowCommand extends AbstractCommand {
                 action = parts[actionIndex];
             }
         }
-        action = (action == null || action.isBlank()) ? "status" : action.trim().toLowerCase(Locale.ROOT);
+        // Sem ação: não executa nada (cai no "usage")
+        action = (action == null || action.isBlank()) ? "" : action.trim().toLowerCase(Locale.ROOT);
         final String actionFinal = action;
         final Double distanceValue = parseDistanceToken(parts, actionIndex);
 
@@ -171,6 +172,23 @@ public final class HorseFollowCommand extends AbstractCommand {
                                 ok ? "horsefollow.command.call.ok" : "horsefollow.command.call.fail")));
                         break;
                     }
+                    case "stay":
+                    case "ficar": {
+                        if (!service.isBound(playerRef)) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.stay.no_bond")));
+                            break;
+                        }
+                        // requestStay aplica imediatamente se desmontado; se montado, entra em fila (pendingStay)
+                        FollowService.StayRequestResult res = service.requestStay(playerRef);
+                        if (res == FollowService.StayRequestResult.APPLIED) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.stay.ok")));
+                        } else if (res == FollowService.StayRequestResult.QUEUED) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.stay.queued")));
+                        } else {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.stay.fail")));
+                        }
+                        break;
+                    }
                     case "reload":
                     case "resetar": {
                         service.reloadConfig();
@@ -184,6 +202,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.status")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.distance")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.call")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.stay")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.reload")));
                         break;
                     }
@@ -193,6 +212,10 @@ public final class HorseFollowCommand extends AbstractCommand {
                 }
             } catch (Throwable t) {
                 // fallback pra não derrubar o servidor
+                try {
+                    System.out.println("[HorseFollow] Command error action=" + actionFinal + " input=" + context.getInputString());
+                    t.printStackTrace();
+                } catch (Throwable ignored) {}
                 try {
                     context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
                 } catch (Throwable ignored) {}

@@ -11,7 +11,8 @@
       "Horse_Foal"
     ],
     "LovedItems": [
-      "Plant_Crop_Carrot_Item"
+      "Plant_Crop_Carrot_Item",
+      "Horse_Feed"
     ],
     "GrazingBlockSet": "Empty",
     "FoodBlockSet": "Empty",

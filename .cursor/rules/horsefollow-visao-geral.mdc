@@ -1,0 +1,140 @@
+---
+description: Visão geral/arquitetura do HorseFollow (Hytale) e pontos de atenção ao editar
+alwaysApply: true
+---
+
+# HorseFollow (Hytale) — visão geral do códigobase
+
+## Fonte da verdade (o que editar)
+
+- **Edite sempre** `src/main/java/**` e `src/main/resources/**`.
+- Pastas `build/**` e `bin/**` contêm **artefatos gerados** (classes compiladas, recursos copiados, JAR) e **não** devem ser tratadas como origem.
+- Existem `.class` dentro de `src/main/java/...` (ex.: `HorseFollowCommand.class`): trate isso como **lixo/artefato**; a referência correta é o `.java`.
+
+## Build / empacotamento
+
+- **Gradle**: `build.gradle`
+  - Dependência: `compileOnly files('libs/HytaleServer.jar')` (API do servidor Hytale; não é empacotada como dependency “normal”).
+  - `processResources` injeta versão em `src/main/resources/manifest.json` via `expand(modVersion: project.version)`.
+  - `jar` gera `HorseFollow-${version}.jar` e inclui recursos de `src/main/resources`.
+  - Toolchain Java 25, mas `options.release = 21` (bytecode target 21).
+- Versão do mod: `gradle.properties` (`version=1.3.2`).
+- Script de instalação local no Hytale: `Scrpts/BuildAndInstallToHytale.ps1` (copia para `...Hytale\UserData\Mods\horsefollow.jar`).
+- Script de coleta de logs: `Scrpts/CopyLatestServerLog.ps1` (copia log para `libs/Log/latest_server.log`).
+
+## Ponto de entrada do mod
+
+- `src/main/resources/manifest.json`
+  - `"Main": "com.horsefollow.HorseFollowPlugin"`
+  - `"IncludesAssetPack": true` (o JAR carrega assets/resources).
+- `com.horsefollow.HorseFollowPlugin`
+  - Registra o comando `/horsefollow`.
+  - Inicia um `Timer` para executar `FollowService.tick()` a cada **100ms** (10 ticks/s).
+  - **Workaround**: cria `manifest.json` mínimo no `dataDirectory` (pasta de dados do mod) para evitar warnings do AssetModule.
+
+## Fluxo principal (bind/follow/teleporte)
+
+- `com.horsefollow.commands.HorseFollowCommand`
+  - Ação padrão: `status`.
+  - Ações: `bind|unbind|status|distance|call|stay|reload|help` e aliases PT-BR (`vincular|desvincular|distancia|chamar|ficar|resetar`).
+  - **Regra crítica**: tudo que toca ECS/componentes roda via `world.execute(...)` (o comando encapsula isso com reflexão).
+  - Observação: existe um helper `worldExecute(...)` **duplicado** no comando e no serviço; se mudar a estratégia/reflexão, mantenha ambos consistentes.
+- `com.horsefollow.FollowService`
+  - Mantém vínculos (player -> horse) em memória e persistidos (UUIDs).
+  - `bind(...)`:
+    - Garante 1 vínculo por player (se já houver, faz `unbind`).
+    - Troca o role do cavalo para um role “amigável” (ID atual: `Horse_Friendly`).
+    - Configura “flock follow”: player vira **LEADER** e cavalo vira **MEMBER** no mesmo flock.
+    - Se o player estiver montado, remove `FlockMembership` do cavalo para evitar conflito.
+  - `tick()`:
+    - Reassocia vínculos persistidos para players online.
+    - Se cavalo ficar distante demais, teleporta o cavalo para perto (com cooldown e limite por tick).
+    - Quando montado, desliga follow removendo flock; quando desmontado, garante flock e roles.
+    - Nota de implementação: o “behindOffset” atual é aplicado como `p.z - behindOffset` (não usa orientação/yaw do player). Se quiser “atrás do player” de verdade, precisa usar direção/rotação do player.
+  - `stay` (ficar):
+    - Desliga follow removendo `FlockMembership` e prende a montaria no ponto (teleport de correção se driftar).
+    - Sai do estado se tomar dano (`DamageDataComponent.lastDamageTime`), se for chamada (`call`) ou se o player montar nela.
+    - Se o player usar `stay` montado, o pedido fica pendente e aplica ao desmontar.
+  - `unbind(...)`:
+    - Remove flock-follow.
+    - Restaura o role original do cavalo (default: índice do role `"Horse"` se não tiver o original salvo).
+    - Remove persistência do vínculo.
+
+## Threading / segurança ECS (não quebrar o servidor)
+
+- O `Timer` roda fora da *world thread*. Por isso:
+  - **Nunca** acesse componentes diretamente fora de `world.execute(...)`.
+  - O projeto usa `worldExecute(...)` com reflexão para suportar variações de API (`getWorld()` vs `world()`) e chamar `execute(Runnable)`.
+  - Em caso de falha, há fallback que roda o `Runnable` direto (pode ser “menos seguro”, mas evita o mod parar).
+
+## Persistência e configuração do mod (em dataDirectory)
+
+- Arquivos criados/esperados em `getDataDirectory()`:
+  - **`binds.txt`**: linhas `playerUuid=horseUuid` (persistência do vínculo).
+  - **`config.properties`** (gerado no primeiro uso se não existir):
+    - `teleportDistance` (default 100.0; `0` desativa teleporte automático)
+    - `behindOffset` (default 3.0)
+    - `maxTeleportsPerTick` (default 2)
+    - `tpCooldownTicks` (default 200)
+- Comando `distance <valor>` atualiza `teleportDistance` e salva.
+- Comando `reload` recarrega o `config.properties`.
+
+## Assets / Roles (dependências diretas do comportamento)
+
+- `FollowService` depende do role ID **`Horse_Friendly`** (`FRIENDLY_ROLE_ID`).
+  - Arquivo: `src/main/resources/Server/NPC/Roles/Creature/Livestock/Horse_Friendly.json`
+  - Base: `Reference: "Template_Animal_Tamed"`
+  - Destaques:
+    - `HorseFollowEnabled: true`
+    - `PlayerDefaultAttitude: "Revered"`
+    - `IsMountable: true` + anchors
+- Role “normal” usado como fallback ao desfazer vínculo:
+  - `src/main/resources/Server/NPC/Roles/Creature/Livestock/Horse.json`
+  - Base: `Reference: "Template_Animal_Neutral"`
+- Template chave que injeta o comportamento de seguir o flock leader:
+  - `src/main/resources/Server/NPC/Roles/_Core/Templates/Template_Animal_Tamed.json`
+  - Contém instrução “**HorseFollow: Follow flock leader while idle (Seek)**” habilitada por `HorseFollowEnabled`.
+- Existem roles para carneiro também (`Ram.json` e `Ram_Friendly.json`), mas o código do serviço **atualmente** troca apenas para `Horse_Friendly`.
+
+## Regras são encadeadas (“uma puxa a outra”) — como editar sem quebrar a estrutura
+
+- Esses JSONs funcionam como um **grafo de regras** (IDs apontam para outras regras):
+  - `Reference` aponta para um template/regra base (ex.: `Template_Animal_Neutral`, `Template_Animal_Tamed`).
+  - Muitos campos dentro de `Modify` são **IDs** de outras regras/recursos (ex.: `Attack`, `DropList`, `Appearance`, itens em `LovedItems`, entries de `FlockArray`).
+- **Semântica crucial do Hytale (override = substituição total)**:
+  - Quando você coloca `Server/.../Ram.json` no seu pack/mod, o jogo **não “herda” do Ram.json original**.
+  - O arquivo do jogo é **substituído** pelo seu. Logo, qualquer coisa que você apagar (mesmo “parecendo opcional”) pode quebrar a cadeia de referências e causar erros/despawn.
+- **Regra de ouro**: trate cada regra “concreta” como uma **definição completa**.
+  - Comece sempre do JSON original (vanilla) e faça **mudanças mínimas**.
+  - **Nunca** apague blocos/fields “só para simplificar”.
+  - Trocar `Reference`/templates é permitido, mas é uma mudança de alto risco: mantenha a estrutura e todos os IDs necessários.
+- **“Posso deixar só `Type` + `Reference`?”**
+  - Para regras concretas (ex.: `Ram_Friendly`, `Horse`, `Ram`), **não** — isso costuma quebrar porque não existe fallback para o original e o template sozinho pode não satisfazer o conjunto de campos/IDs esperados para aquela entidade/role.
+- **Workflow recomendado**:
+  - Extraia o `Horse.json` original (do `Assets.zip`) para `libs/Analise/<prefixo_claro>/...` mantendo os mesmos caminhos.
+  - Copie para `src/main/resources/Server/...` e edite **apenas** o necessário (ex.: adicionar `LovedItems`).
+  - Se mudar `Reference` (ex.: para alterar comportamento com player), mantenha todos os demais IDs válidos e teste no jogo (porque o comportamento “em cascata” vem do template).
+- **IDs e nomes**:
+  - No código, o role é buscado por string (ex.: `NPCPlugin.get().getIndex(\"Horse\")` e `FRIENDLY_ROLE_ID = \"Horse_Friendly\"`).
+  - Em prática, o ID costuma ser o **nome do arquivo sem `.json`** (ex.: `Horse.json` → `Horse`), então renomear arquivo/ID quebra referências.
+
+## Localização (mensagens do comando)
+
+- `com.horsefollow.Localization` carrega `Server/Languages/<locale>/server.lang` do classpath.
+- Idiomas presentes: `en-US` e `pt-BR`.
+- As chaves usadas pelo comando são `horsefollow.command.*`.
+
+## Itens/áudio incluídos no asset pack
+
+- Itens em `src/main/resources/Server/Item/Items/`:
+  - `Horn.json`, `Horse_Feed.json`, `Ram_Feed.json`
+- Som do chifre:
+  - `src/main/resources/Server/Audio/SoundEvents/Horn_Sound.json`
+  - `src/main/resources/Server/Audio/SoundEvents/SFX/Items/Horn/SFX_Horn_Use.json`
+
+## Atenção: prefixo das chaves de tradução dos itens
+
+- Os JSONs de item usam `TranslationProperties.Name/Description` com **prefixo `server.items.*`** (ex.: `server.items.Horn.name`).
+- Os arquivos `server.lang` atuais têm entradas como **`items.Horn.name`** (sem o `server.`).
+- Se nomes/descrições dos itens aparecerem “crus” no jogo, verifique e alinhe esse prefixo (ou ajustando os JSONs, ou ajustando o `server.lang`).
+
