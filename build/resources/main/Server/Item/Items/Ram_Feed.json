@@ -44,5 +44,14 @@
     ]
   },
   "DropOnDeath": true,
-  "Quality": "Common"
+  "Quality": "Common",
+  "Interactions": {
+    "Secondary": {
+      "Interactions": [
+        {
+          "Parent": "Ram_Feed_Charge"
+        }
+      ]
+    }
+  }
 }

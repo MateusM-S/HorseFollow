@@ -3,9 +3,14 @@ package com.horsefollow;
 import com.hypixel.hytale.server.core.command.system.CommandRegistry;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
+import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.component.Ref;
+import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 
 import javax.annotation.Nonnull;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,13 +23,33 @@ import java.util.regex.Pattern;
 public final class HorseFollowPlugin extends JavaPlugin {
 
     private final FollowService service;
+    private final ItemConsume itemConsume;
     private Timer timer;
+    
+    // Instância estática para acesso do comando
+    private static HorseFollowPlugin instance;
 
     public HorseFollowPlugin(@Nonnull JavaPluginInit init) {
         super(init);
+        instance = this;
         Path dataDirectory = getDataDirectory();
         ensureDataPackManifest(dataDirectory);
         this.service = new FollowService(dataDirectory);
+        this.itemConsume = new ItemConsume();
+    }
+    
+    /**
+     * Retorna a instância do plugin (para acesso do comando).
+     */
+    public static HorseFollowPlugin getInstance() {
+        return instance;
+    }
+    
+    /**
+     * Retorna o ItemConsume (para acesso do comando).
+     */
+    public ItemConsume getItemConsume() {
+        return itemConsume;
     }
 
     @Override
@@ -38,6 +63,15 @@ public final class HorseFollowPlugin extends JavaPlugin {
             @Override
             public void run() {
                 service.tick();
+                // Verifica consumo de Horse_Feed em todos os jogadores online (não só vinculados)
+                List<Ref<EntityStore>> onlineRefs = new ArrayList<>();
+                try {
+                    Universe.get().getPlayers().forEach(p -> {
+                        Ref<EntityStore> ref = p.getReference();
+                        if (ref != null && ref.isValid()) onlineRefs.add(ref);
+                    });
+                } catch (Throwable ignored) { }
+                itemConsume.tick(onlineRefs);
             }
         }, 250L, 100L);
     }
@@ -49,6 +83,7 @@ public final class HorseFollowPlugin extends JavaPlugin {
             timer = null;
         }
         service.shutdown();
+        itemConsume.clearAll();
     }
 
     /**

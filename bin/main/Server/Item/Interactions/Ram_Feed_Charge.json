@@ -1,0 +1,35 @@
+{
+  "Type": "Charging",
+  "Effects": {
+    "ItemAnimationId": "Consume",
+    "ClearAnimationOnFinish": true
+  },
+  "HorizontalSpeedMultiplier": 0.6,
+  "CancelOnItemChange": true,
+  "RunTime": 0,
+  "Next": {
+    "0": {
+      "Type": "Simple",
+      "RunTime": 0.1
+    },
+    "1.0": {
+      "Type": "Simple",
+      "RunTime": 0.0
+    },
+    "2.0": {
+      "Type": "ModifyInventory",
+      "AdjustHeldItemQuantity": -1,
+      "Next": {
+        "Type": "Simple",
+        "Effects": {
+          "ItemAnimationId": "Interact"
+        },
+        "RunTime": 0.2
+      }
+    }
+  },
+  "Failed": {
+    "Type": "Simple",
+    "RunTime": 0.1
+  }
+}

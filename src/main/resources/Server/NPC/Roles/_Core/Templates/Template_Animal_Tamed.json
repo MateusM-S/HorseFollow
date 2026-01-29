@@ -360,6 +360,21 @@
   "BreathesInWater": {
     "Compute": "BreathesInWater"
   },
+  "IsMountable": {
+    "Compute": "IsMountable"
+  },
+  "MountAnchorX": {
+    "Compute": "MountAnchorX"
+  },
+  "MountAnchorY": {
+    "Compute": "MountAnchorY"
+  },
+  "MountAnchorZ": {
+    "Compute": "MountAnchorZ"
+  },
+  "MountMovementConfig": {
+    "Compute": "MountMovementConfig"
+  },
   "KnockbackScale": 0.5,
   "MotionControllerList": [
     {

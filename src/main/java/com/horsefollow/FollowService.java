@@ -237,6 +237,14 @@ public final class FollowService {
         return playerRef != null && bound.containsKey(playerRef);
     }
 
+    /**
+     * Retorna uma cópia do mapa de players vinculados para uso externo (ex: ItemConsume).
+     * Não modifica o mapa original.
+     */
+    public Map<Ref<EntityStore>, Ref<EntityStore>> getBoundPlayers() {
+        return new java.util.HashMap<>(bound);
+    }
+
     public Ref<EntityStore> getBoundHorse(Ref<EntityStore> playerRef) {
         if (playerRef == null) return null;
         return bound.get(playerRef);
@@ -292,20 +300,17 @@ public final class FollowService {
         return idx >= 0 ? candidate : null;
     }
 
+    /**
+     * Obtém o nome base do role da montaria (ex.: "Horse", "Ram") para derivar o _Friendly.
+     * Sempre usa o role atual da entidade horseRef; não usa originalRoleByPlayer, para evitar
+     * que ao trocar de montaria (cavalo -> carneiro) sem unbind o carneiro receba Horse_Friendly.
+     */
     private String resolveBaseRoleName(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
         if (store == null || horseRef == null) return null;
 
-        // Preferir o "original" se já conhecido (garante que não vira Foo_Friendly_Friendly)
-        Integer originalIndex = (playerRef != null) ? originalRoleByPlayer.get(playerRef) : null;
-        int roleIndex = -1;
-        if (originalIndex != null) {
-            roleIndex = originalIndex;
-        } else {
-            NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
-            if (npc != null) {
-                roleIndex = npc.getRoleIndex();
-            }
-        }
+        NPCEntity npc = store.getComponent(horseRef, NPCEntity.getComponentType());
+        if (npc == null) return null;
+        int roleIndex = npc.getRoleIndex();
         if (roleIndex < 0) return null;
 
         String name = NPCPlugin.get().getName(roleIndex);

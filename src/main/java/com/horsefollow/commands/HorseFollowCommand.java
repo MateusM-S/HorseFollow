@@ -195,6 +195,13 @@ public final class HorseFollowCommand extends AbstractCommand {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.reload.ok")));
                         break;
                     }
+                    case "feedconsumed": {
+                        // Comando interno para ser chamado pela interação JSON ou programaticamente
+                        // Usa sendMessage() diretamente (mesma lógica do comando /say)
+                        String message = Localization.get(store, playerRef, "horsefollow.feed.consumed");
+                        context.sender().sendMessage(Message.raw(message));
+                        break;
+                    }
                     case "help": {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.title")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.bind")));

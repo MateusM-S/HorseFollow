@@ -1,0 +1,19 @@
+{
+  "Layers": [
+    {
+      "Looping": false,
+      "Files": [
+        "Sounds/Items/Consume_Bread_Stereo_01.ogg"
+      ],
+      "RandomSettings": {
+        "MinPitch": -0.2,
+        "MaxPitch": 0.2
+      }
+    }
+  ],
+  "Volume": 1.0,
+  "PreventSoundInterruption": false,
+  "MaxDistance": 32,
+  "StartAttenuationDistance": 8
+}
+

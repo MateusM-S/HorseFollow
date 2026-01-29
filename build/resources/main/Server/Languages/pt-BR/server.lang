@@ -32,3 +32,5 @@ items.Ram_Feed.name= Ração para Carneiro
 items.Ram_Feed.description= Use para domar um carneiro.
 items.Horn.name= Chifre de Carneiro
 items.Horn.description= Use isso para chamar sua montaria.
+horsefollow.feed.consumed=[HorseFollow] Comeu 01 item.
+horsefollow.ramfeed.consumed=[HorseFollow] Comeu 01 item (ração de carneiro).

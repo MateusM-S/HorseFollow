@@ -1,0 +1,16 @@
+{
+    "Group": "DjCtavia",
+    "Name": "InventoryManagerAPI",
+    "Version": "1.1.0",
+    "Description": "Inventory Manager API allows you to save/load inventories, extending inventory functionalities",
+    "Authors": [
+        {
+            "Name": "DjCtavia",
+            "Email": "djctavia@gmail.com"
+        }
+    ],
+    "ServerVersion": "*",
+    "DisabledByDefault": false,
+    "IncludesAssetPack": true,
+    "Main": "dev.djctavia.InventoryManagerAPIPlugin"
+}
