@@ -3,7 +3,7 @@
     {
       "Looping": false,
       "Files": [
-        "Sounds/Items/Consume_Bread_Stereo_01.ogg"
+        "Sounds/Consume_Bread_Stereo_01.ogg"
       ],
       "RandomSettings": {
         "MinPitch": -0.2,

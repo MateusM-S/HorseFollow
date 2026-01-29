@@ -34,3 +34,4 @@ items.Horn.name= Chifre de Carneiro
 items.Horn.description= Use isso para chamar sua montaria.
 horsefollow.feed.consumed=[HorseFollow] Comeu 01 item.
 horsefollow.ramfeed.consumed=[HorseFollow] Comeu 01 item (ração de carneiro).
+horsefollow.feed.no_target=[HorseFollow] Nenhum alvo válido no alcance. Use a ração mirando em um cavalo ou carneiro (dentro do alcance).

@@ -1,1 +1,17 @@
 libs/Assets.zip
+
+# Pastas geradas/extraídas (não são código do HorseFollow)
+# Nativas descompactadas por dependências (zstd-jni etc.) ao rodar algo no diretório do projeto
+aix/
+darwin/
+freebsd/
+linux/
+win/
+# Conteúdo de JAR extraído para a raiz (ex.: jar xf ou ferramenta)
+com/
+io/
+it/
+org/
+META-INF/
+# Migração de blocos (pode ser criada pelo servidor Hytale ao rodar no diretório do projeto)
+migration/

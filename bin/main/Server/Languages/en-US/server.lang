@@ -34,3 +34,4 @@ items.Horn.name= Horn
 items.Horn.description= Use it to call your mount.
 horsefollow.feed.consumed=[HorseFollow] Consumed 01 item.
 horsefollow.ramfeed.consumed=[HorseFollow] Consumed 01 item (Ram Feed).
+horsefollow.feed.no_target=[HorseFollow] No valid target in range. Use the feed while looking at a horse or ram (within range).
