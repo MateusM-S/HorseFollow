@@ -561,9 +561,9 @@
           ]
         },
         {
-          "$Comment": "HorseFollow: Follow flock leader while idle (Seek).",
+          "$Comment": "HorseFollow: Follow flock leader while idle (Seek). Disabled when mounted so idle anims do not run.",
           "Enabled": {
-            "Compute": "HorseFollowEnabled && !isEmptyStringArray(FlockArray)"
+            "Compute": "HorseFollowEnabled && !isEmptyStringArray(FlockArray) && !hasPassengers()"
           },
           "Continue": true,
           "Sensor": {
@@ -709,9 +709,13 @@
     {
       "Instructions": [
         {
+          "$Comment": "Idle behaviors (wander, eat, grazing, etc.) disabled when mounted so status animation is not overridden.",
           "Sensor": {
             "Type": "State",
             "State": "Idle"
+          },
+          "Enabled": {
+            "Compute": "!hasPassengers()"
           },
           "Instructions": [
             {

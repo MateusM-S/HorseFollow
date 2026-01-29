@@ -4,6 +4,8 @@ import com.hypixel.hytale.builtin.mounts.MountedByComponent;
 import com.hypixel.hytale.builtin.mounts.MountedComponent;
 import com.hypixel.hytale.builtin.mounts.NPCMountComponent;
 import com.hypixel.hytale.component.Archetype;
+import com.hypixel.hytale.component.ArchetypeChunk;
+import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.math.vector.Vector3d;
@@ -265,6 +267,11 @@ public final class FollowService {
         configRef.set(updated);
         updated.save(configFile);
         return true;
+    }
+
+    /** Alcance (blocos) para vincular montaria ao usar Horse_Feed/Ram_Feed. */
+    public double getFeedBindRange() {
+        return configRef.get().getFeedBindRange();
     }
 
     private boolean applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -796,6 +803,60 @@ public final class FollowService {
             return ref;
         }
         return null;
+    }
+
+    /**
+     * Encontra a montaria válida mais próxima do jogador dentro do alcance (para uso do item Feed).
+     * Horse_Feed: target Horse ou Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
+     * Retorna null se não houver alvo válido no alcance.
+     */
+    /**
+     * Encontra a montaria válida mais próxima do jogador dentro do alcance (para uso do item Feed).
+     * Horse_Feed: target Horse ou Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
+     * Montaria já vinculada a este jogador é excluída do scan (evita revincular com F).
+     * Retorna null se não houver alvo válido no alcance.
+     */
+    public Ref<EntityStore> findTargetMount(Store<EntityStore> store, Ref<EntityStore> playerRef, double range, boolean horseFeed) {
+        if (store == null || playerRef == null || range <= 0) return null;
+        Ref<EntityStore> excludeRef = getBoundHorse(playerRef);
+        TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
+        if (playerTf == null) return null;
+        Vector3d playerPos = playerTf.getPosition();
+        if (playerPos == null) return null;
+        String role1 = horseFeed ? "Horse" : "Ram";
+        String role2 = horseFeed ? "Horse_Friendly" : "Ram_Friendly";
+        int idx1 = NPCPlugin.get().getIndex(role1);
+        int idx2 = NPCPlugin.get().getIndex(role2);
+        if (idx1 < 0 && idx2 < 0) return null;
+        double rangeSq = range * range;
+        AtomicReference<Ref<EntityStore>> closest = new AtomicReference<>();
+        AtomicReference<Double> closestDistSq = new AtomicReference<>(Double.MAX_VALUE);
+        Archetype<EntityStore> query = Archetype.of(NPCEntity.getComponentType());
+        store.forEachChunk(query, (ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> cb) -> {
+            int size = chunk.size();
+            for (int i = 0; i < size; i++) {
+                Ref<EntityStore> ref = chunk.getReferenceTo(i);
+                if (ref == null || ref.equals(playerRef) || !ref.isValid()) continue;
+                if (ref.equals(excludeRef)) continue;
+                NPCEntity npc = chunk.getComponent(i, NPCEntity.getComponentType());
+                if (npc == null) continue;
+                int roleIndex = npc.getRoleIndex();
+                if (roleIndex != idx1 && roleIndex != idx2) continue;
+                TransformComponent tf = store.getComponent(ref, TransformComponent.getComponentType());
+                if (tf == null) continue;
+                Vector3d pos = tf.getPosition();
+                if (pos == null) continue;
+                double dx = pos.getX() - playerPos.getX();
+                double dy = pos.getY() - playerPos.getY();
+                double dz = pos.getZ() - playerPos.getZ();
+                double distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq <= rangeSq && distSq < closestDistSq.get()) {
+                    closestDistSq.set(distSq);
+                    closest.set(ref);
+                }
+            }
+        });
+        return closest.get();
     }
 
     private static Ref<EntityStore> resolveHorseFromPlayer(Store<EntityStore> store, Ref<EntityStore> playerRef) {

@@ -1,6 +1,7 @@
 package com.horsefollow;
 
 import com.hypixel.hytale.server.core.command.system.CommandRegistry;
+import com.hypixel.hytale.server.core.io.adapter.PacketAdapters;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.Universe;
@@ -35,7 +36,7 @@ public final class HorseFollowPlugin extends JavaPlugin {
         Path dataDirectory = getDataDirectory();
         ensureDataPackManifest(dataDirectory);
         this.service = new FollowService(dataDirectory);
-        this.itemConsume = new ItemConsume();
+        this.itemConsume = new ItemConsume(service);
     }
     
     /**
@@ -56,6 +57,9 @@ public final class HorseFollowPlugin extends JavaPlugin {
     public void setup() {
         CommandRegistry reg = getCommandRegistry();
         reg.registerCommand(new com.horsefollow.commands.HorseFollowCommand(service));
+
+        // Feed pela tecla F: com Horse_Feed/Ram_Feed na mão, F = feed (bind); sem target não reduz o item.
+        PacketAdapters.registerInbound(new FeedOnFKeyFilter(this));
 
         // 10 ticks/s (100ms).
         timer = new Timer("HorseFollow-Tick", true);

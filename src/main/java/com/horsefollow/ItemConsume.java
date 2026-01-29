@@ -2,10 +2,15 @@ package com.horsefollow;
 
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.protocol.SoundCategory;
+import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.world.SoundUtil;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.inventory.Inventory;
+import com.hypixel.hytale.server.core.inventory.ItemStack;
+import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 
 import java.lang.reflect.Method;
 import java.util.Collection;
@@ -13,29 +18,33 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Gerencia envio de mensagem no chat quando Horse_Feed ou Ram_Feed é consumido.
- * Usa sendMessage() diretamente do PlayerRef (mesma lógica do comando /say).
+ * Ao consumir Horse_Feed ou Ram_Feed: verifica target (Horse/Ram no alcance).
+ * Se target válido: faz bind (vínculo) e mensagem de sucesso.
+ * Se sem target: devolve 1 item (refund) e mensagem de erro.
  */
 public final class ItemConsume {
 
-    // playerRef -> última vez que enviamos mensagem (para evitar re-enviar)
+    private final FollowService followService;
+
+    // playerRef -> última vez que processamos feed (throttle)
     private final Map<Ref<EntityStore>, Long> lastScheduled = new ConcurrentHashMap<>();
-    
+    // playerRef -> última vez que tryFeedFromFKey fez bind com sucesso (evita tick enviar "no_target" logo depois)
+    private final Map<Ref<EntityStore>, Long> lastFeedHandledByFKey = new ConcurrentHashMap<>();
     // playerRef -> última quantidade de Horse_Feed detectada (para detectar diminuição)
     private final Map<Ref<EntityStore>, Integer> lastHorseFeedQuantity = new ConcurrentHashMap<>();
-    
     // playerRef -> última quantidade de Ram_Feed detectada (para detectar diminuição)
     private final Map<Ref<EntityStore>, Integer> lastRamFeedQuantity = new ConcurrentHashMap<>();
-    
-    // playerRef -> se já logamos que conseguimos acessar o Inventory (para não poluir o log)
-    private final Map<Ref<EntityStore>, Boolean> inventoryAccessLogged = new ConcurrentHashMap<>();
-    
+
+    /** Janela em ms: se tryFeedFromFKey fez bind há menos que isso, tryNotifyConsumed (tick) não envia "no_target". */
+    private static final long FEED_FKEY_COOLDOWN_MS = 2500L;
+
     private long tickCounter = 0L;
-    private static final long CHECK_INTERVAL_TICKS = 2; // Verifica a cada 2 ticks (200ms) para detectar rápido
+    private static final long CHECK_INTERVAL_TICKS = 2; // Verifica a cada 2 ticks (200ms)
     private static final String HORSE_FEED_ITEM_ID = "Horse_Feed";
     private static final String RAM_FEED_ITEM_ID = "Ram_Feed";
 
-    public ItemConsume() {
+    public ItemConsume(FollowService followService) {
+        this.followService = followService;
     }
 
     /**
@@ -54,9 +63,9 @@ public final class ItemConsume {
         for (Ref<EntityStore> playerRef : playersToCheck) {
             if (playerRef == null || !playerRef.isValid()) {
                 lastScheduled.remove(playerRef);
+                lastFeedHandledByFKey.remove(playerRef);
                 lastHorseFeedQuantity.remove(playerRef);
                 lastRamFeedQuantity.remove(playerRef);
-                inventoryAccessLogged.remove(playerRef);
                 continue;
             }
             
@@ -69,6 +78,14 @@ public final class ItemConsume {
         }
     }
     
+    /**
+     * Executa código na world thread (mesmo padrão do FollowService).
+     * Público para uso pelo FeedOnFKeyFilter.
+     */
+    public static void runOnWorldThread(Object entityStore, Runnable r) {
+        worldExecute(entityStore, r);
+    }
+
     /**
      * Helper para executar código na world thread (mesmo padrão do FollowService).
      */
@@ -107,13 +124,9 @@ public final class ItemConsume {
     }
 
     /**
-     * Verifica se o player está consumindo Horse_Feed ou Ram_Feed e envia mensagem se necessário.
-     * Detecta quando a quantidade de cada item no inventário diminui.
-     * 
-     * Baseado na análise do InventoryManagerAPI, tenta acessar o Inventory via:
-     * 1. Componente ECS (InventoryComponent)
-     * 2. Método direto no PlayerRef (getInventory())
-     * 3. Reflexão como fallback
+     * Verifica se o player consumiu Horse_Feed ou Ram_Feed (diminuição de quantidade).
+     * Se target válido no alcance: faz bind e mensagem de sucesso.
+     * Se sem target: devolve 1 item (refund) e mensagem de erro.
      */
     private void checkPlayerConsuming(Store<EntityStore> store, Ref<EntityStore> playerRef) {
         if (store == null || playerRef == null || !playerRef.isValid()) {
@@ -130,59 +143,63 @@ public final class ItemConsume {
                 return;
             }
 
-            // Tenta obter o Inventory do player
             Inventory inventory = getPlayerInventory(store, playerRef, player);
-            if (inventory == null) {
-                return;
-            }
+            if (inventory == null) return;
 
-            // Horse_Feed
+            // Horse_Feed: detecta diminuição de quantidade (engine consumiu no charge)
             Integer currentHorse = getItemQuantity(inventory, HORSE_FEED_ITEM_ID);
             if (currentHorse != null) {
                 Integer lastHorse = lastHorseFeedQuantity.get(playerRef);
                 lastHorseFeedQuantity.put(playerRef, currentHorse);
                 if (lastHorse != null && currentHorse < lastHorse) {
-                    System.out.println("[HorseFollow] ItemConsume: Detectada diminuição de Horse_Feed: " + lastHorse + " -> " + currentHorse);
                     tryNotifyConsumed(store, playerRef, true);
                 }
             } else {
                 lastHorseFeedQuantity.remove(playerRef);
             }
 
-            // Ram_Feed (mesma lógica)
+            // Ram_Feed: mesma lógica
             Integer currentRam = getItemQuantity(inventory, RAM_FEED_ITEM_ID);
             if (currentRam != null) {
                 Integer lastRam = lastRamFeedQuantity.get(playerRef);
                 lastRamFeedQuantity.put(playerRef, currentRam);
                 if (lastRam != null && currentRam < lastRam) {
-                    System.out.println("[HorseFollow] ItemConsume: Detectada diminuição de Ram_Feed: " + lastRam + " -> " + currentRam);
                     tryNotifyConsumed(store, playerRef, false);
                 }
             } else {
                 lastRamFeedQuantity.remove(playerRef);
             }
-            
         } catch (Throwable t) {
             System.out.println("[HorseFollow] ItemConsume: Erro ao verificar consumo: " + t.getClass().getSimpleName() + " - " + t.getMessage());
         }
     }
 
     /**
-     * Envia mensagem de consumo (Horse_Feed ou Ram_Feed), com throttle de 2s por player.
+     * Ao detectar consumo de Feed (diminuição de quantidade): verifica target no alcance.
+     * Se válido: bind e mensagem. Se sem target: refund + mensagem.
+     * Ignora se o consumo foi há pouco pela tecla F (tryFeedFromFKey), para não enviar "no_target" após bind ok.
      */
     private void tryNotifyConsumed(Store<EntityStore> store, Ref<EntityStore> playerRef, boolean horseFeed) {
         long now = System.currentTimeMillis();
-        Long lastScheduledTime = lastScheduled.get(playerRef);
-        if (lastScheduledTime != null && (now - lastScheduledTime) <= 2000) {
-            System.out.println("[HorseFollow] ItemConsume: Mensagem já enviada recentemente, ignorando");
+        Long lastFKey = lastFeedHandledByFKey.get(playerRef);
+        if (lastFKey != null && (now - lastFKey) <= FEED_FKEY_COOLDOWN_MS) {
+            return; // Consumo já tratado pela tecla F; não enviar "no_target" nem refund
+        }
+        Long lastSched = lastScheduled.get(playerRef);
+        if (lastSched != null && (now - lastSched) <= 2000) return;
+        lastScheduled.put(playerRef, now);
+
+        double range = followService.getFeedBindRange();
+        Ref<EntityStore> target = followService.findTargetMount(store, playerRef, range, horseFeed);
+        String itemId = horseFeed ? HORSE_FEED_ITEM_ID : RAM_FEED_ITEM_ID;
+
+        if (target == null || !target.isValid()) {
+            refundHeldItem(store, playerRef, itemId);
+            sendConsumedMessage(store, playerRef, "horsefollow.feed.no_target");
             return;
         }
-        if (horseFeed) {
-            notifyConsumed(store, playerRef);
-        } else {
-            notifyRamFeedConsumed(store, playerRef);
-        }
-        lastScheduled.put(playerRef, now);
+        followService.bind(playerRef, target);
+        sendConsumedMessage(store, playerRef, "horsefollow.command.bind.ok");
     }
     
     /**
@@ -206,68 +223,78 @@ public final class ItemConsume {
             Object playerComponent = getComponent.invoke(store, playerRef, playerComponentType);
             
             if (playerComponent != null) {
-                // Chama getInventory() no componente Player
                 Method getInventory = playerComponentClass.getMethod("getInventory");
                 Inventory inventory = (Inventory) getInventory.invoke(playerComponent);
-                if (inventory != null) {
-                    // Log apenas na primeira vez que conseguimos acessar
-                    if (!inventoryAccessLogged.getOrDefault(playerRef, false)) {
-                        System.out.println("[HorseFollow] ItemConsume: Inventory obtido via Player.getInventory() (como InventoryManagerAPI)");
-                        inventoryAccessLogged.put(playerRef, true);
-                    }
-                    return inventory;
-                }
+                if (inventory != null) return inventory;
             }
-        } catch (ClassNotFoundException e) {
-            System.out.println("[HorseFollow] ItemConsume: Classe Player não encontrada: " + e.getMessage());
-        } catch (NoSuchMethodException e) {
-            System.out.println("[HorseFollow] ItemConsume: Método não encontrado: " + e.getMessage());
-        } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao obter Inventory via Player: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+        } catch (Throwable ignored) {
         }
         
-        // Estratégia 2: Tentar método direto no PlayerRef (fallback)
+        // Estratégia 2: método direto no PlayerRef
         try {
             Method getInventory = player.getClass().getMethod("getInventory");
             Inventory inventory = (Inventory) getInventory.invoke(player);
-            if (inventory != null) {
-                // Log apenas na primeira vez que conseguimos acessar
-                if (!inventoryAccessLogged.getOrDefault(playerRef, false)) {
-                    System.out.println("[HorseFollow] ItemConsume: Inventory obtido via PlayerRef.getInventory()");
-                    inventoryAccessLogged.put(playerRef, true);
-                }
-                return inventory;
-            }
+            if (inventory != null) return inventory;
         } catch (NoSuchMethodException ignored) {
-            // Método não existe
-        } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao chamar PlayerRef.getInventory(): " + t.getMessage());
+        } catch (Throwable ignored) {
         }
         
-        // Estratégia 3: Tentar outros nomes de método comuns
-        String[] methodNames = {"getPlayerInventory", "inventory", "getItemInventory"};
-        for (String methodName : methodNames) {
+        // Estratégia 3: outros nomes de método comuns
+        for (String methodName : new String[] { "getPlayerInventory", "inventory", "getItemInventory" }) {
             try {
                 Method method = player.getClass().getMethod(methodName);
                 Object result = method.invoke(player);
-                if (result instanceof Inventory) {
-                    // Log apenas na primeira vez que conseguimos acessar
-                    if (!inventoryAccessLogged.getOrDefault(playerRef, false)) {
-                        System.out.println("[HorseFollow] ItemConsume: Inventory obtido via PlayerRef." + methodName + "()");
-                        inventoryAccessLogged.put(playerRef, true);
-                    }
-                    return (Inventory) result;
-                }
-            } catch (NoSuchMethodException ignored) {
-                // Método não existe
+                if (result instanceof Inventory) return (Inventory) result;
             } catch (Throwable ignored) {
-                // Erro ao invocar
             }
         }
-        
         return null;
     }
     
+    /**
+     * Devolve 1 unidade do item ao jogador (held item ou stack do mesmo itemId).
+     * Usado quando o feed é consumido pelo engine mas não havia target válido.
+     */
+    private void refundHeldItem(Store<EntityStore> store, Ref<EntityStore> playerRef, String itemId) {
+        if (store == null || playerRef == null || itemId == null) return;
+        try {
+            PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+            if (player == null) return;
+            Inventory inventory = getPlayerInventory(store, playerRef, player);
+            if (inventory == null) return;
+            // Tenta addItem(itemId, 1)
+            try {
+                Method addItem = inventory.getClass().getMethod("addItem", String.class, int.class);
+                addItem.invoke(inventory, itemId, 1);
+                return;
+            } catch (NoSuchMethodException ignored) {}
+            try {
+                Method addItem = inventory.getClass().getMethod("addItem", String.class, Integer.TYPE);
+                addItem.invoke(inventory, itemId, 1);
+                return;
+            } catch (NoSuchMethodException ignored) {}
+            // Fallback: tentar getHeldItem e setQuantity(getQuantity()+1)
+            try {
+                Method getHeld = inventory.getClass().getMethod("getHeldItem");
+                Object held = getHeld.invoke(inventory);
+                if (held != null) {
+                    Method getItemIdM = held.getClass().getMethod("getItemId");
+                    String heldId = (String) getItemIdM.invoke(held);
+                    if (itemId.equals(heldId)) {
+                        Method getQ = held.getClass().getMethod("getQuantity");
+                        Integer q = (Integer) getQ.invoke(held);
+                        if (q != null) {
+                            Method setQ = held.getClass().getMethod("setQuantity", int.class);
+                            setQ.invoke(held, q + 1);
+                            return;
+                        }
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {}
+        } catch (Throwable ignored) {
+        }
+    }
+
     /**
      * Obtém a quantidade de um item no inventário (ex.: Horse_Feed, Ram_Feed).
      * Tenta múltiplas estratégias para encontrar o item.
@@ -287,9 +314,7 @@ public final class ItemConsume {
                         return quantity;
                     }
                 }
-            } catch (NoSuchMethodException ignored) {
-            } catch (Throwable t) {
-                System.out.println("[HorseFollow] ItemConsume: Erro ao chamar getItem(): " + t.getMessage());
+            } catch (Throwable ignored) {
             }
             
             // Estratégia 2: Tentar método findItem(String itemId)
@@ -348,13 +373,66 @@ public final class ItemConsume {
                 }
             }
             
-        } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao obter quantidade: " + t.getMessage());
+        } catch (Throwable ignored) {
         }
-        
         return null;
     }
     
+    /**
+     * Feed pela tecla F: target no alcance → consome 1, bind e mensagem; sem target → só mensagem (não altera inventário).
+     * Deve ser chamado na world thread (ex.: a partir de FeedOnFKeyFilter).
+     */
+    public void tryFeedFromFKey(Store<EntityStore> store, Ref<EntityStore> playerRef, boolean horseFeed) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return;
+        double range = followService.getFeedBindRange();
+        Ref<EntityStore> target = followService.findTargetMount(store, playerRef, range, horseFeed);
+        String itemId = horseFeed ? HORSE_FEED_ITEM_ID : RAM_FEED_ITEM_ID;
+        if (target == null || !target.isValid()) {
+            sendConsumedMessage(store, playerRef, "horsefollow.feed.no_target");
+            return;
+        }
+        if (!consumeOneHeldItem(store, playerRef, itemId)) return;
+        followService.bind(playerRef, target);
+        lastFeedHandledByFKey.put(playerRef, System.currentTimeMillis());
+        playFeedConsumeSound(store, playerRef);
+        sendConsumedMessage(store, playerRef, "horsefollow.command.bind.ok");
+    }
+
+    /**
+     * Remove 1 unidade do item (itemId) do inventário do jogador (item na mão / hotbar ativa).
+     * Usa a API oficial: getItemInHand(), getHotbar(), getActiveHotbarSlot(), setItemStackForSlot/removeItemStackFromSlot.
+     * Retorna true se removeu, false se não conseguiu (ex.: item não encontrado ou quantidade 0).
+     */
+    public boolean consumeOneHeldItem(Store<EntityStore> store, Ref<EntityStore> playerRef, String itemId) {
+        if (store == null || playerRef == null || itemId == null) return false;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return false;
+        Inventory inventory = getPlayerInventory(store, playerRef, player);
+        if (inventory == null) return false;
+        try {
+            // API oficial: getItemInHand() e hotbar
+            ItemStack inHand = inventory.getItemInHand();
+            if (inHand == null || inHand.isEmpty() || !itemId.equals(inHand.getItemId())) {
+                return false;
+            }
+            int q = inHand.getQuantity();
+            if (q < 1) return false;
+            ItemContainer hotbar = inventory.getHotbar();
+            if (hotbar == null) return false;
+            short slot = (short) (inventory.getActiveHotbarSlot() & 0xFF);
+            if (q == 1) {
+                hotbar.setItemStackForSlot(slot, ItemStack.EMPTY);
+            } else {
+                hotbar.setItemStackForSlot(slot, inHand.withQuantity(q - 1));
+            }
+            inventory.markChanged();
+            return true;
+        } catch (Throwable t) {
+            System.out.println("[HorseFollow] ItemConsume: Erro ao consumir 1 item (F): " + t.getMessage());
+            return false;
+        }
+    }
+
     /**
      * Método público para notificar consumo de Horse_Feed manualmente.
      * Usa sendMessage() diretamente do PlayerRef (mesma lógica do comando /say).
@@ -368,6 +446,95 @@ public final class ItemConsume {
      */
     public void notifyRamFeedConsumed(Store<EntityStore> store, Ref<EntityStore> playerRef) {
         sendConsumedMessage(store, playerRef, "horsefollow.ramfeed.consumed");
+    }
+
+    /** Volume do som de feed (1.0 = padrão). Aumentado para ficar mais audível. */
+    private static final float FEED_SOUND_VOLUME = 1.5f;
+
+    /** IDs do SoundEvent de consumo (feed). Primeiro é o do mod; demais são fallbacks. */
+    private static final String[] FEED_CONSUME_SOUND_IDS = {
+        "Consume_Bread_Sound",
+        "SFX/Items/Consume_Bread_Stereo_01",
+        "SFX_Items_Consume_Bread_Stereo_01"
+    };
+
+    /** Log de falha do som apenas uma vez por sessão para não poluir o log. */
+    private static volatile boolean soundFailureLogged = false;
+
+    /**
+     * Toca o som de consumo (pão/feed) na posição do jogador, após feed com sucesso.
+     * Usa SoundUtil.playSoundEvent3dToPlayer (API Hytale). Índice obtido por reflexão.
+     */
+    private void playFeedConsumeSound(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return;
+        try {
+            Integer index = getSoundEventIndex();
+            if (index == null || index < 0) {
+                if (!soundFailureLogged) {
+                    soundFailureLogged = true;
+                    System.out.println("[HorseFollow] ItemConsume: Som de feed não tocado — não foi possível obter índice do SoundEvent (testados: " + String.join(", ", FEED_CONSUME_SOUND_IDS) + "). Ver getSoundEventIndex no log acima.");
+                }
+                return;
+            }
+            TransformComponent transform = store.getComponent(playerRef, TransformComponent.getComponentType());
+            if (transform == null) {
+                if (!soundFailureLogged) {
+                    soundFailureLogged = true;
+                    System.out.println("[HorseFollow] ItemConsume: Som de feed não tocado — TransformComponent do jogador é null.");
+                }
+                return;
+            }
+            var pos = transform.getPosition();
+            SoundUtil.playSoundEvent3dToPlayer(playerRef, index.intValue(), SoundCategory.SFX, pos.getX(), pos.getY(), pos.getZ(), FEED_SOUND_VOLUME, 1.0f, store);
+        } catch (Throwable t) {
+            if (!soundFailureLogged) {
+                soundFailureLogged = true;
+                System.out.println("[HorseFollow] ItemConsume: Erro ao tocar som de feed: " + t.getClass().getSimpleName() + " — " + t.getMessage());
+                t.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * Obtém o índice do SoundEvent para o som de feed (AssetRegistry + store de SoundEvent).
+     */
+    private static Integer getSoundEventIndex() {
+        for (String soundEventId : FEED_CONSUME_SOUND_IDS) {
+            Integer idx = tryGetSoundEventIndex(soundEventId);
+            if (idx != null && idx >= 0) return idx;
+        }
+        return null;
+    }
+
+    /**
+     * Obtém o índice do SoundEvent por ID via AssetRegistry + store de SoundEvent (config).
+     * O protocolo SoundEvent não tem getAssetMap(); o índice vem do AssetStore do servidor (IndexedLookupTableAssetMap).
+     */
+    private static Integer tryGetSoundEventIndex(String soundEventId) {
+        // AssetRegistry.getAssetStore(ConfigSoundEvent.class) -> store.getAssetMap() -> map.getIndex(id)
+        try {
+            Class<?> configClass = Class.forName("com.hypixel.hytale.server.core.asset.type.soundevent.config.SoundEvent");
+            Class<?> registryClass = Class.forName("com.hypixel.hytale.assetstore.AssetRegistry");
+            java.lang.reflect.Method getAssetStore = registryClass.getMethod("getAssetStore", Class.class);
+            Object store = getAssetStore.invoke(null, configClass);
+            if (store == null) return null;
+            java.lang.reflect.Method getAssetMap = store.getClass().getMethod("getAssetMap");
+            Object map = getAssetMap.invoke(store);
+            if (map == null) return null;
+            java.lang.reflect.Method getIndex = map.getClass().getMethod("getIndex", Object.class);
+            Object idx = getIndex.invoke(map, soundEventId);
+            if (idx instanceof Number) {
+                int i = ((Number) idx).intValue();
+                // IndexedAssetMap usa NOT_FOUND (geralmente -1) quando não encontra
+                if (i >= 0) return i;
+            }
+        } catch (Throwable t) {
+            if (!soundFailureLogged) {
+                soundFailureLogged = true;
+                System.out.println("[HorseFollow] ItemConsume: getSoundEventIndex falhou para '" + soundEventId + "': " + t.getMessage());
+            }
+        }
+        return null;
     }
 
     private void sendConsumedMessage(Store<EntityStore> store, Ref<EntityStore> playerRef, String localeKey) {
@@ -385,16 +552,6 @@ public final class ItemConsume {
             System.out.println("[HorseFollow] ItemConsume: Erro ao enviar mensagem: " + t.getClass().getSimpleName() + " - " + t.getMessage());
         }
     }
-    
-    /**
-     * Executa o comando /horsefollow feedconsumed programaticamente para um player.
-     * Usa a mesma lógica do comando /say (sendMessage()).
-     */
-    public void executeFeedConsumedCommand(Store<EntityStore> store, Ref<EntityStore> playerRef) {
-        // Em vez de executar o comando via CommandRegistry (que é complexo),
-        // vamos chamar notifyConsumed() diretamente, que usa sendMessage() (mesma lógica do /say)
-        notifyConsumed(store, playerRef);
-    }
 
     /**
      * Limpa o estado quando o player sai.
@@ -402,9 +559,9 @@ public final class ItemConsume {
     public void onPlayerDisconnect(Ref<EntityStore> playerRef) {
         if (playerRef != null) {
             lastScheduled.remove(playerRef);
+            lastFeedHandledByFKey.remove(playerRef);
             lastHorseFeedQuantity.remove(playerRef);
             lastRamFeedQuantity.remove(playerRef);
-            inventoryAccessLogged.remove(playerRef);
         }
     }
 
@@ -413,8 +570,8 @@ public final class ItemConsume {
      */
     public void clearAll() {
         lastScheduled.clear();
+        lastFeedHandledByFKey.clear();
         lastHorseFeedQuantity.clear();
         lastRamFeedQuantity.clear();
-        inventoryAccessLogged.clear();
     }
 }

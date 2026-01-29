@@ -108,35 +108,26 @@ public final class HorseFollowCommand extends AbstractCommand {
                     }
                     case "bind":
                     case "vincular": {
+                        // Bind somente com o item (Horse_Feed/Ram_Feed + F). Comando /horsefollow bind: só operador e nunca montado.
                         MountedComponent mounted = store.getComponent(playerRef, MountedComponent.getComponentType());
-                        if (mounted == null) {
-                            Ref<EntityStore> fallbackHorse = findMountFromPassengers(store, playerRef);
-                            if (fallbackHorse == null) {
-                                fallbackHorse = findNpcMountByOwner(store, playerRef);
-                            }
-                            if (fallbackHorse != null && fallbackHorse.isValid()) {
-                                service.bind(playerRef, fallbackHorse);
-                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
-                            } else {
-                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.mount_first")));
-                            }
+                        if (mounted != null) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.use_item_mounted")));
                             break;
                         }
-
-                        Ref<EntityStore> horseRef = mounted.getMountedToEntity();
-                        if (horseRef == null || !horseRef.isValid()) {
-                            service.unbind(playerRef);
-                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.invalid_mount")));
+                        if (!isOperator(context)) {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.operator_only")));
                             break;
                         }
-
-                        Ref<EntityStore> resolvedHorse = resolveBoundHorse(store, playerRef, horseRef);
-                        if (resolvedHorse != null && resolvedHorse.isValid()) {
-                            horseRef = resolvedHorse;
+                        Ref<EntityStore> fallbackHorse = findMountFromPassengers(store, playerRef);
+                        if (fallbackHorse == null) {
+                            fallbackHorse = findNpcMountByOwner(store, playerRef);
                         }
-
-                        service.bind(playerRef, horseRef);
-                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
+                        if (fallbackHorse != null && fallbackHorse.isValid()) {
+                            service.bind(playerRef, fallbackHorse);
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.ok")));
+                        } else {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.use_item")));
+                        }
                         break;
                     }
                     case "distance":
@@ -274,6 +265,14 @@ public final class HorseFollowCommand extends AbstractCommand {
         }
     }
 
+    /** Verifica se o sender do comando é operador (hasPermission). */
+    private static boolean isOperator(@Nonnull CommandContext context) {
+        try {
+            return context.sender().hasPermission("hytale.operator");
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     private static Ref<EntityStore> findMountFromPassengers(Store<EntityStore> store, Ref<EntityStore> playerRef) {
         if (store == null || playerRef == null) return null;
         com.hypixel.hytale.server.core.universe.PlayerRef playerObj =
@@ -330,35 +329,4 @@ public final class HorseFollowCommand extends AbstractCommand {
         return found.get();
     }
 
-    private static Ref<EntityStore> resolveBoundHorse(
-            Store<EntityStore> store,
-            Ref<EntityStore> playerRef,
-            Ref<EntityStore> mountedRef
-    ) {
-        if (store == null || playerRef == null || mountedRef == null) return null;
-
-        MountedByComponent mountedBy = store.getComponent(mountedRef, MountedByComponent.getComponentType());
-        if (mountedBy != null) {
-            List<Ref<EntityStore>> passengers = mountedBy.getPassengers();
-            if (passengers != null) {
-                for (Ref<EntityStore> passenger : passengers) {
-                    if (playerRef.equals(passenger)) {
-                        return mountedRef;
-                    }
-                }
-            }
-        }
-
-        MountedComponent mounted = store.getComponent(mountedRef, MountedComponent.getComponentType());
-        if (mounted != null) {
-            Ref<EntityStore> mountedTo = mounted.getMountedToEntity();
-            if (mountedTo != null && mountedTo.isValid()) {
-                return mountedTo;
-            }
-        }
-
-        Ref<EntityStore> fallback = findMountFromPassengers(store, playerRef);
-        if (fallback != null) return fallback;
-        return findNpcMountByOwner(store, playerRef);
-    }
 }
