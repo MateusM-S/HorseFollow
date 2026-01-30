@@ -594,7 +594,14 @@
             "Type": "Seek",
             "SlowDownDistance": 7,
             "StopDistance": 4
-          }
+          },
+          "Actions": [
+            {
+              "$Comment": "Clear Status slot so Walk motion controller drives Walk/Run animation instead of Idle.",
+              "Type": "PlayAnimation",
+              "Slot": "Status"
+            }
+          ]
         },
         {
           "$Comment": "Join eligible flocks if not a member of a flock.",

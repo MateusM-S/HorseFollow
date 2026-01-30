@@ -16,6 +16,7 @@
       ],
       "DropList": "Drop_Ram",
       "MaxHealth": 124,
+      "MaxSpeed": 8,
       "ViewRange": 15,
       "AttackWhenStartled": true,
       "Attack": "Root_NPC_Attack_Melee",
