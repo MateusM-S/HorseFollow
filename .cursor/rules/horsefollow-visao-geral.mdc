@@ -138,3 +138,13 @@ alwaysApply: true
 - Os arquivos `server.lang` atuais têm entradas como **`items.Horn.name`** (sem o `server.`).
 - Se nomes/descrições dos itens aparecerem “crus” no jogo, verifique e alinhe esse prefixo (ou ajustando os JSONs, ou ajustando o `server.lang`).
 
+## Ícones (pasta Common/Icons)
+
+- Ícones do projeto ficam em **`src/main/resources/Common/Icons/`** (ex.: `Common/Icons/ItemsGenerated/Horn.png`, `Apple_Feed_Icon.png`, `Carrot_Feed_Icon.png`).
+- Podem ser referenciados em .ui ou JSONs quando for necessário (ex.: imagem da montaria na aba Menu, ícones de abas).
+
+## Custom UI (ConfigPage)
+
+- **`Common/UI/Custom/Pages/ConfigPage.ui`** está na versão **simples** (só distância de teleporte + Save/Cancel) para evitar o crash “Failed to load CustomUI documents” ao entrar no jogo.
+- Uma versão com **abas** (Menu, Configuração, Sobre) faz o cliente falhar ao carregar o documento ao join; quando o Hytale aceitar .ui mais complexos, pode-se restaurar abas e usar os ícones de `Common/Icons/` nas abas e na foto da montaria.
+

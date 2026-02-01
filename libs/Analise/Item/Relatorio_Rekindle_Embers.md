@@ -181,7 +181,27 @@ Arquivos correspondentes (no zip, com prefixo `Common/`):
 - `Common/NPC/Void/Necromancer_Void/Models/Weapons/Spellbook/Demon_Texture.png`
 - `Common/Icons/ItemsGenerated/Weapon_Spellbook_Demon.png`
 
-### 7) Observações importantes / limitações da análise
+### 7) Drop do item — NPC e chance
+
+**Na análise extraída (Rekindle_Embers) não há definição de drop** do `Weapon_Spellbook_Rekindle_Embers`. A pasta contém apenas:
+
+- O **item** e suas interações;
+- O **NPC invocado** (`Risen_Knight`) e o template `Template_Summoned_Ally`;
+- Áudio e animações do spellbook.
+
+Ou seja: **qual NPC droppa o item e com qual chance não estão nos arquivos extraídos**. No Hytale, o drop é configurado assim:
+
+1. O **role do NPC** (ex.: `Server/NPC/Roles/.../Necromancer_Void.json`) tem um campo **`DropList`** que aponta para um **ID de lista de drop** (ex.: `"DropList": "Drop_Necromancer_Void"`).
+2. A **lista de drop** em si (itens + chances) fica em outro recurso, em geral em `Server/NPC/` ou em tabelas de loot, com o ID referenciado.
+
+Para descobrir **quem droppa o spellbook e a chance**:
+
+- **Opção 1:** Procurar no **Assets.zip** completo por `Weapon_Spellbook_Rekindle_Embers` (ou `Rekindle_Embers`) dentro de arquivos JSON de NPC / drop lists. Quem tiver esse item na lista é o NPC (ou a tabela) que define o drop; no mesmo arquivo costuma vir a chance (ex.: `Chance`, `Weight`, `Probability`).
+- **Opção 2:** Usar o script **`SearchSpellbookDropInAssets.ps1`** na pasta `libs/Analise/Item/`: ele abre o Assets.zip, busca esse item ID em arquivos JSON e lista os arquivos que contêm a referência (a partir daí você abre o JSON e vê o NPC e a chance).
+
+**Resumo:** O NPC que droppa o item e a chance **não foram incluídos na extração** do Rekindle Embers; é preciso buscar no pacote completo do jogo (Assets) ou na documentação do mod.
+
+### 8) Observações importantes / limitações da análise
 
 - **Tradução do nome/descrição do item**: o item referencia as chaves
   - `server.items.Weapon_Spellbook_Rekindle_Embers.name`
@@ -195,7 +215,7 @@ Arquivos correspondentes (no zip, com prefixo `Common/`):
 
 - **Semântica exata do `RunOnBlockTypes`**: a intenção é clara (scan de blocos num raio e aplica a cadeia), mas como esse tipo de interação aparece praticamente só aqui, detalhes como “ordem de seleção” (mais próximo vs aleatório vs mira) ficam implícitos no engine.
 
-### 8) Checklist “funcionando” (como testar no jogo)
+### 9) Checklist “funcionando” (como testar no jogo)
 
 - Pegue o item `Weapon_Spellbook_Rekindle_Embers` (stack até 5)
 - Encontre `Deco_Bone_Pile` ou `Deco_Bone_Skulls`
@@ -206,7 +226,7 @@ Arquivos correspondentes (no zip, com prefixo `Common/`):
   - o bloco de ossos é destruído
   - seu stack do item diminui em 1
 
-### 9) Glossário (como o jogo modela a mecânica por JSON)
+### 10) Glossário (como o jogo modela a mecânica por JSON)
 
 Esta seção complementa o relatório explicando os “blocos” de mecânica que aparecem nos JSONs.
 

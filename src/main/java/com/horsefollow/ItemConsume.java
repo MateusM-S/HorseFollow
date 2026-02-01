@@ -38,13 +38,33 @@ public final class ItemConsume {
     /** Janela em ms: se tryFeedFromFKey fez bind há menos que isso, tryNotifyConsumed (tick) não envia "no_target". */
     private static final long FEED_FKEY_COOLDOWN_MS = 2500L;
 
+    /** Cooldown do Chifre (Horn): 1 s após o uso completar antes de poder usar de novo. */
+    private static final long HORN_USE_COOLDOWN_MS = 1000L;
+    private final Map<Ref<EntityStore>, Long> lastHornUseCompleteTime = new ConcurrentHashMap<>();
+    /** Início da última carga do Horn (evita spam: cliente envia muitos Secondary enquanto segura). */
+    private final Map<Ref<EntityStore>, Long> lastHornChargeStartTime = new ConcurrentHashMap<>();
+    /** Janela em ms: não iniciar nova carga se a última começou há menos que isso (5,5s animação + margem). */
+    private static final long HORN_CHARGE_START_THROTTLE_MS = 6000L;
+
     private long tickCounter = 0L;
     private static final long CHECK_INTERVAL_TICKS = 2; // Verifica a cada 2 ticks (200ms)
     private static final String HORSE_FEED_ITEM_ID = "Horse_Feed";
     private static final String RAM_FEED_ITEM_ID = "Ram_Feed";
 
+    /** Delay do Chifre: 4,75s (0,75s levar à boca + 4s tocando) antes de executar o call. */
+    public static final long HORN_CHARGE_MS = 4750L;
+    /** Atraso em ms para tocar o som do chifre (quando o jogador leva à boca: 0,75s). */
+    private static final long HORN_SOUND_DELAY_MS = 750L;
+
+    private final HorseFollowPlugin plugin;
+
     public ItemConsume(FollowService followService) {
+        this(followService, null);
+    }
+
+    public ItemConsume(FollowService followService, HorseFollowPlugin plugin) {
         this.followService = followService;
+        this.plugin = plugin;
     }
 
     /**
@@ -434,18 +454,139 @@ public final class ItemConsume {
     }
 
     /**
-     * Método público para notificar consumo de Horse_Feed manualmente.
-     * Usa sendMessage() diretamente do PlayerRef (mesma lógica do comando /say).
+     * Uso do Chifre (Horn): chama a montaria vinculada (teleporte + reativa follow).
+     * Deve ser chamado na world thread (ex.: a partir de HornOnUseFilter).
+     * Sem vínculo → mensagem "no_bond"; com vínculo → teleportHorseNearPlayer + mensagem ok/fail + som do chifre.
      */
-    public void notifyConsumed(Store<EntityStore> store, Ref<EntityStore> playerRef) {
-        sendConsumedMessage(store, playerRef, "horsefollow.feed.consumed");
+    public void tryHornUse(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return;
+        Ref<EntityStore> horseRef = followService.getBoundHorse(playerRef);
+        if (horseRef == null || !horseRef.isValid()) {
+            sendConsumedMessage(store, playerRef, "horsefollow.command.call.no_bond");
+            return;
+        }
+        boolean ok = followService.teleportHorseNearPlayer(store, playerRef, horseRef);
+        sendConsumedMessage(store, playerRef, ok ? "horsefollow.command.call.ok" : "horsefollow.command.call.fail");
+        lastHornUseCompleteTime.put(playerRef, System.currentTimeMillis());
+    }
+
+    /** Volume do som do chifre (1.0 = padrão). */
+    private static final float HORN_SOUND_VOLUME = 1.0f;
+
+    /** IDs do SoundEvent do chifre (mod). */
+    private static final String[] HORN_SOUND_IDS = {
+        "SFX/Items/Horn/SFX_Horn_Use",
+        "Horn_Sound",
+        "SFX_Horn_Use"
+    };
+
+    private static volatile boolean hornSoundFailureLogged = false;
+
+    /**
+     * Retorna o item ID do slot ativo da barra de utilitários, ou null.
+     * Deve ser chamado na world thread.
+     */
+    public String getUtilityItemId(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return null;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return null;
+        Inventory inv = getPlayerInventory(store, playerRef, player);
+        if (inv == null) return null;
+        try {
+            Method getUtilityItem = inv.getClass().getMethod("getUtilityItem");
+            Object stack = getUtilityItem.invoke(inv);
+            if (stack == null) return null;
+            Method getItemId = stack.getClass().getMethod("getItemId");
+            return (String) getItemId.invoke(stack);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     /**
-     * Notifica consumo de Ram_Feed (mesma lógica que Horse_Feed).
+     * Chamado quando o jogador envia Secondary (botão direito ou uso da utility bar).
+     * Se o item usado for o Horn (na mão ou na barra de utilitários), executa som + agenda call em 4s.
+     * Throttle: o cliente envia muitos Secondary enquanto segura; só reagimos à primeira (uma carga por vez).
+     * Deve ser chamado na world thread.
      */
-    public void notifyRamFeedConsumed(Store<EntityStore> store, Ref<EntityStore> playerRef) {
-        sendConsumedMessage(store, playerRef, "horsefollow.ramfeed.consumed");
+    public void onSecondaryInteraction(Store<EntityStore> store, Ref<EntityStore> playerRef, String packetItemInHandId) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return;
+        boolean hornInHand = HORN_ITEM_ID.equals(packetItemInHandId);
+        String utilityId = getUtilityItemId(store, playerRef);
+        boolean hornInUtility = HORN_ITEM_ID.equals(utilityId);
+        if (!hornInHand && !hornInUtility) return;
+        if (!canUseHorn(playerRef)) return;
+        long now = System.currentTimeMillis();
+        Long lastStart = lastHornChargeStartTime.get(playerRef);
+        if (lastStart != null && (now - lastStart) < HORN_CHARGE_START_THROTTLE_MS) {
+            return;
+        }
+        lastHornChargeStartTime.put(playerRef, now);
+        if (plugin != null) {
+            Object entityStore = store.getExternalData();
+            Ref<EntityStore> ref = playerRef;
+            Store<EntityStore> storeRef = store;
+            plugin.scheduleHornCall(new java.util.TimerTask() {
+                @Override
+                public void run() {
+                    ItemConsume.runOnWorldThread(entityStore, () -> playHornSound(storeRef, ref));
+                }
+            }, HORN_SOUND_DELAY_MS);
+            plugin.scheduleHornCall(new java.util.TimerTask() {
+                @Override
+                public void run() {
+                    ItemConsume.runOnWorldThread(entityStore, () -> tryHornUse(store, ref));
+                }
+            }, HORN_CHARGE_MS);
+        }
+    }
+
+    private static final String HORN_ITEM_ID = "Horn";
+
+    /**
+     * Verifica se o jogador pode usar o Chifre (fora do cooldown de 1 s).
+     * Pode ser chamado de qualquer thread (leitura do mapa).
+     */
+    public boolean canUseHorn(Ref<EntityStore> playerRef) {
+        if (playerRef == null || !playerRef.isValid()) return false;
+        Long last = lastHornUseCompleteTime.get(playerRef);
+        if (last == null) return true;
+        return (System.currentTimeMillis() - last) >= HORN_USE_COOLDOWN_MS;
+    }
+
+    /**
+     * Toca o som do chifre na posição do jogador (junto com o carregamento).
+     * Público para ser chamado pelo HornOnUseFilter ao iniciar a carga.
+     */
+    public void playHornSound(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null || !playerRef.isValid()) return;
+        try {
+            Integer index = getHornSoundEventIndex();
+            if (index == null || index < 0) {
+                if (!hornSoundFailureLogged) {
+                    hornSoundFailureLogged = true;
+                    System.out.println("[HorseFollow] ItemConsume: Som do chifre não tocado — índice do SoundEvent não encontrado.");
+                }
+                return;
+            }
+            TransformComponent transform = store.getComponent(playerRef, TransformComponent.getComponentType());
+            if (transform == null) return;
+            var pos = transform.getPosition();
+            SoundUtil.playSoundEvent3dToPlayer(playerRef, index.intValue(), SoundCategory.SFX, pos.getX(), pos.getY(), pos.getZ(), HORN_SOUND_VOLUME, 1.0f, store);
+        } catch (Throwable t) {
+            if (!hornSoundFailureLogged) {
+                hornSoundFailureLogged = true;
+                System.out.println("[HorseFollow] ItemConsume: Erro ao tocar som do chifre: " + t.getMessage());
+            }
+        }
+    }
+
+    private static Integer getHornSoundEventIndex() {
+        for (String id : HORN_SOUND_IDS) {
+            Integer idx = tryGetSoundEventIndex(id);
+            if (idx != null && idx >= 0) return idx;
+        }
+        return null;
     }
 
     /** Volume do som de feed (1.0 = padrão). Aumentado para ficar mais audível. */
@@ -562,6 +703,8 @@ public final class ItemConsume {
             lastFeedHandledByFKey.remove(playerRef);
             lastHorseFeedQuantity.remove(playerRef);
             lastRamFeedQuantity.remove(playerRef);
+            lastHornUseCompleteTime.remove(playerRef);
+            lastHornChargeStartTime.remove(playerRef);
         }
     }
 
@@ -573,5 +716,7 @@ public final class ItemConsume {
         lastFeedHandledByFKey.clear();
         lastHorseFeedQuantity.clear();
         lastRamFeedQuantity.clear();
+        lastHornUseCompleteTime.clear();
+        lastHornChargeStartTime.clear();
     }
 }

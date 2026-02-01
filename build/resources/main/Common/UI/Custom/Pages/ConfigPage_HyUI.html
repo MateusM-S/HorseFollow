@@ -1,0 +1,433 @@
+<!-- ConfigPage_HyUI.html -->
+<style>
+  /* Overlay centralizado */
+  .page-overlay{
+    anchor-left: 0;
+    anchor-top: 0;
+    anchor-width: 100%;
+    anchor-height: 100%;
+    layout-mode: middlecenter;
+  }
+
+  /* Painel */
+  .hf-panel{
+    anchor-width: 720;
+    anchor-height: 520;
+  }
+
+  .hf-contents{
+    anchor-width: 720;
+    anchor-height: 480;
+    layout-mode: Top;
+    padding: 12;
+  }
+
+  /* Tabs */
+  #main-tabs{
+    anchor-width: 696;
+    anchor-height: 60;
+  }
+
+  /* Páginas: altura fixa para preencher abaixo das tabs; footer fica no fundo */
+  .tab-content{
+    anchor-width: 696;
+    anchor-height: 396;
+    layout-mode: Top;
+    padding: 0;
+  }
+
+  /* Corpo da página: ocupa o espaço restante; padding-right afasta conteúdo da borda direita */
+  .tab-scroll{
+    anchor-width: 696;
+    flex-weight: 1;
+    layout-mode: Top;
+    padding-top: 10;
+    padding-bottom: 10;
+    padding-left: 10;
+    padding-right: 28;
+  }
+
+  /* Centralização genérica */
+  .center-title{
+    anchor-width: 676;
+    anchor-height: 34;
+    layout-mode: middlecenter;
+    margin-bottom: 10;
+  }
+
+  /* ===== MENU ===== */
+  .mount-row{ layout-mode: Left; padding: 6; }
+
+  .section-title{
+    font-size: 22;
+    font-weight: bold;
+    color: #ffffff;
+    anchor-height: 30;
+  }
+
+  .mount-preview-box{
+    anchor-width: 180;
+    anchor-height: 180;
+    layout-mode: middlecenter;
+  }
+  .mount-preview-img{
+    anchor-width: 160;
+    anchor-height: 160;
+  }
+
+  .mount-details{
+    anchor-width: 500;
+    anchor-height: 260;
+    layout-mode: Top;
+    padding: 6;
+  }
+
+  /* Nome da montaria */
+  .uuid-row{ layout-mode: Left; padding: 2; }
+  .uuid-input{ anchor-width: 390; anchor-height: 36; }
+  .reset-btn-icon{ anchor-width: 36; anchor-height: 36; margin-left: 10; }
+
+  /* Espaço entre input e barras */
+  .uuid-to-bars-spacer{ anchor-height: 70; }
+
+  /* Barras (compatível: usa <progress>) */
+  .bar-row{ layout-mode: Left; padding: 6; }
+  .bar-row-gap{ anchor-height: 16; }
+
+  .bar-icon{ anchor-width: 26; anchor-height: 26; margin-top: 6; margin-right: 14; }
+
+  /* Container da barra */
+  .bar-wrap{
+    anchor-width: 360;
+    anchor-height: 22;
+    margin-left: 6;
+    layout-mode: middlecenter;
+  }
+  .bar-progress{
+    anchor-width: 360;
+    anchor-height: 22;
+    margin-left: 0;
+  }
+  .bar-progress-life{
+    anchor-width: 360;
+    anchor-height: 22;
+    background-color: #add555;
+  }
+  .bar-progress-stamina{
+    anchor-width: 360;
+    anchor-height: 22;
+    background-color: #f5a834;
+  }
+
+  /* Velocidade: mais espaço acima (igual às barras) */
+  .velocity-spacer{ anchor-height: 16; }
+  .velocity-row{ layout-mode: Left; padding: 6; }
+  .velocity-icon{ anchor-width: 26; anchor-height: 26; }
+  .velocity-text{
+    font-size: 16;
+    color: #f3a634;
+    anchor-height: 22;
+    padding-left: 12;
+    margin-top: 4;
+  }
+
+  /* ===== SOBRE ===== */
+  .about-title{
+    font-size: 22;
+    font-weight: bold;
+    color: #ffffff;
+    anchor-height: 30;
+  }
+  .about-spacer{ anchor-height: 14; }
+
+  .about-text{
+    font-size: 15;
+    color: #cccccc;
+    white-space: wrap;
+    anchor-width: 660;
+    anchor-height: 240;
+  }
+
+  /* ===== CONFIG ===== */
+  .config-title{
+    font-size: 22;
+    font-weight: bold;
+    color: #ffffff;
+    anchor-height: 30;
+  }
+
+  .config-spacer{ anchor-height: 14; }
+
+  /* Linha: label à direita (próximo ao controle) + input/checkbox alinhados */
+  .config-row-wrap{
+    anchor-width: 676;
+    anchor-height: 44;
+    layout-mode: Left;
+  }
+
+  .config-row{
+    layout-mode: Left;
+    padding: 2;
+    anchor-height: 40;
+  }
+
+  .config-label-wrap{
+    anchor-width: 420;
+    anchor-height: 40;
+    layout-mode: Right;
+    padding-right: 10;
+  }
+
+  .config-label{
+    font-size: 15;
+    color: #96a9be;
+    anchor-height: 22;
+    margin-top: 9;
+  }
+
+  .config-input{
+    anchor-width: 140;
+    anchor-height: 36;
+    margin-left: 10;
+  }
+
+  .config-row2-wrap{
+    anchor-width: 676;
+    anchor-height: 44;
+    layout-mode: Left;
+    margin-top: 8;
+  }
+
+  .config-row2{
+    layout-mode: Left;
+    padding: 2;
+    anchor-height: 40;
+  }
+
+  .config-label-wrap2{
+    anchor-width: 420;
+    anchor-height: 40;
+    layout-mode: Right;
+    padding-right: 10;
+  }
+
+  .config-label2{
+    font-size: 15;
+    color: #96a9be;
+    anchor-height: 22;
+    margin-top: 9;
+  }
+
+  .config-checkbox{
+    anchor-width: 22;
+    anchor-height: 22;
+    margin-top: 9;
+    margin-left: 10;
+  }
+
+  .config-row3-wrap{
+    anchor-width: 676;
+    anchor-height: 44;
+    layout-mode: Left;
+    margin-top: 8;
+  }
+
+  .config-row3{
+    layout-mode: Left;
+    padding: 2;
+    anchor-height: 40;
+  }
+
+  .config-label-wrap3{
+    anchor-width: 420;
+    anchor-height: 40;
+    layout-mode: Right;
+    padding-right: 10;
+  }
+
+  .config-label3{
+    font-size: 15;
+    color: #96a9be;
+    anchor-height: 22;
+    margin-top: 9;
+    white-space: wrap;
+  }
+
+  .config-checkbox3{
+    anchor-width: 22;
+    anchor-height: 22;
+    margin-top: 9;
+    margin-left: 10;
+  }
+
+  /* ===== FOOTER ===== (ancorado à largura do painel e ao fundo da aba) */
+  .footer-row{
+    anchor-width: 696;
+    anchor-height: 72;
+    anchor-left: 0;
+    layout-mode: Right;
+    padding-top: 12;
+    padding-bottom: 12;
+    padding-left: 12;
+    padding-right: 32;
+  }
+
+  .footer-buttons{ layout-mode: Left; padding: 2; gap: 24; }
+
+  .exit-btn{
+    anchor-width: 170;
+    anchor-height: 50;
+    margin-right: 24;
+  }
+
+  .save-btn{
+    anchor-width: 190;
+    anchor-height: 50;
+    margin-right: 0;
+  }
+</style>
+
+<div class="page-overlay">
+  <div class="hf-backdrop"></div>
+
+  <div class="decorated-container hf-panel" data-hyui-title="HORSE FOLLOW">
+    <div class="container-contents hf-contents">
+
+      <nav id="main-tabs" class="tabs"
+           data-tabs="menu:Menu:menu-content,config:Config:config-content,about:Sobre:about-content"
+           data-selected="menu"></nav>
+
+      <!-- MENU -->
+      <div id="menu-content" class="tab-content" data-hyui-tab-id="menu">
+        <div class="tab-scroll">
+
+          <div class="center-title">
+            <p class="section-title">Sua montaria</p>
+          </div>
+
+          <div class="mount-row">
+            <div class="mount-preview-box">
+              <img id="MountPreviewImg" src="MOUNT_IMG_SRC" class="mount-preview-img"/>
+            </div>
+
+            <div class="mount-details">
+              <div class="uuid-row">
+                <input id="MountName" type="text" class="uuid-input"
+                       placeholder="MOUNT_PLACEHOLDER"
+                       value="MOUNT_NAME_VALUE"/>
+
+                <button id="ResetName" class="custom-button reset-btn-icon"
+                        data-hyui-default-bg="background-image: url('Reset.png');"
+                        data-hyui-hovered-bg="background-image: url('Reset.png');"
+                        data-hyui-pressed-bg="background-image: url('Reset.png');"></button>
+              </div>
+
+              <div class="uuid-to-bars-spacer"></div>
+
+              <!-- VIDA (cor #add555, sem texto) -->
+              <div class="bar-row">
+                <img src="Health.png" class="bar-icon"/>
+                <div class="bar-wrap">
+                  <progress id="LifeBar" class="bar-progress bar-progress-life" value="LIFE_PLACEHOLDER" max="LIFE_MAX_PLACEHOLDER"></progress>
+                </div>
+              </div>
+
+              <div class="bar-row-gap"></div>
+
+              <!-- STAMINA (cor #f5a834, sem texto) -->
+              <div class="bar-row">
+                <img src="Stamina.png" class="bar-icon"/>
+                <div class="bar-wrap">
+                  <progress id="StaminaBar" class="bar-progress bar-progress-stamina" value="STAMINA_PLACEHOLDER" max="STAMINA_MAX_PLACEHOLDER"></progress>
+                </div>
+              </div>
+
+              <div class="velocity-spacer"></div>
+
+              <!-- VELOCIDADE -->
+              <div class="velocity-row">
+                <img src="velocidade.png" class="velocity-icon"/>
+                <p id="VelocityText" class="velocity-text">VELOCITY_TEXT_PLACEHOLDER</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-row">
+          <button id="SairMenu" class="exit-btn">SAIR</button>
+        </div>
+      </div>
+
+      <!-- CONFIG -->
+      <div id="config-content" class="tab-content" data-hyui-tab-id="config">
+        <div class="tab-scroll">
+          <div class="center-title">
+            <p class="config-title">Configurações</p>
+          </div>
+
+          <div class="config-spacer"></div>
+
+          <div class="config-row-wrap">
+            <div class="config-row">
+              <div class="config-label-wrap">
+                <p class="config-label">Distância do teleporte automático (blocos):</p>
+              </div>
+              <input id="DistanceInput" name="DistanceInput" type="text" class="config-input" placeholder="100" value="CONFIG_DISTANCE_VALUE" CONFIG_INPUT_DISABLED/>
+            </div>
+          </div>
+
+          <div class="config-row2-wrap">
+            <div class="config-row2">
+              <div class="config-label-wrap2">
+                <p class="config-label2">Desativar teleporte automático:</p>
+              </div>
+
+              <!-- AJUSTE: remover value e usar checked via placeholder -->
+              <input id="DisableTeleport" name="DisableTeleport" type="checkbox" class="config-checkbox" CONFIG_DISABLE_TP_CHECKED/>
+            </div>
+          </div>
+
+          <div class="config-row3-wrap">
+            <div class="config-row3">
+              <div class="config-label-wrap3">
+                <p class="config-label3">Desativar acompanhamento da montaria?</p>
+              </div>
+
+              <!-- AJUSTE: remover value e usar checked via placeholder -->
+              <input id="DisableFollow" name="DisableFollow" type="checkbox" class="config-checkbox3" CONFIG_DISABLE_FOLLOW_CHECKED/>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-row">
+          <div class="footer-buttons">
+            <button id="SaveButton" class="save-btn">SALVAR</button>
+            <button id="SairConfig" class="secondary-button exit-btn">SAIR</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ABOUT -->
+      <div id="about-content" class="tab-content" data-hyui-tab-id="about">
+        <div class="tab-scroll">
+          <div class="center-title">
+            <p class="about-title">Sobre o HorseFollow</p>
+          </div>
+
+          <div class="about-spacer"></div>
+
+          <p id="AboutText" class="about-text">
+            This plugin creates a persistent bond between the player and a mount. Supports horses and rams.
+            Binding is done using feed items (Horse Feed / Ram Feed). Once bound, the mount actively follows its owner.
+            Follow distance and teleport behavior are configurable; automatic teleport can be fully disabled.
+          </p>
+        </div>
+
+        <div class="footer-row">
+          <button id="SairAbout" class="exit-btn">SAIR</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

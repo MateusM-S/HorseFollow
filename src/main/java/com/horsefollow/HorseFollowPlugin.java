@@ -36,7 +36,7 @@ public final class HorseFollowPlugin extends JavaPlugin {
         Path dataDirectory = getDataDirectory();
         ensureDataPackManifest(dataDirectory);
         this.service = new FollowService(dataDirectory);
-        this.itemConsume = new ItemConsume(service);
+        this.itemConsume = new ItemConsume(service, this);
     }
     
     /**
@@ -53,6 +53,16 @@ public final class HorseFollowPlugin extends JavaPlugin {
         return itemConsume;
     }
 
+    /**
+     * Agenda a execução do "call" do Chifre após o tempo da carga (2s).
+     * Usado pelo HornOnUseFilter quando o jogador usa o botão direito com o Horn.
+     */
+    public void scheduleHornCall(TimerTask task, long delayMs) {
+        if (timer != null) {
+            timer.schedule(task, delayMs);
+        }
+    }
+
     @Override
     public void setup() {
         CommandRegistry reg = getCommandRegistry();
@@ -60,6 +70,8 @@ public final class HorseFollowPlugin extends JavaPlugin {
 
         // Feed pela tecla F: com Horse_Feed/Ram_Feed na mão, F = feed (bind); sem target não reduz o item.
         PacketAdapters.registerInbound(new FeedOnFKeyFilter(this));
+        // Chifre (Horn): Use = chamar montaria vinculada + som do chifre.
+        PacketAdapters.registerInbound(new HornOnUseFilter(this));
 
         // 10 ticks/s (100ms).
         timer = new Timer("HorseFollow-Tick", true);

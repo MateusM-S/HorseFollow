@@ -1,0 +1,145 @@
+@PrimaryButtonStyle = TextButtonStyle(
+  Default: (Background: #3a7bd5, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #4a8be5, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #2a6bc5, LabelStyle: (FontSize: 13, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@SecondaryButtonStyle = TextButtonStyle(
+  Default: (Background: #2b3542, LabelStyle: (FontSize: 13, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #3b4552, LabelStyle: (FontSize: 13, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #1b2532, LabelStyle: (FontSize: 13, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@ToggleButtonStyle = TextButtonStyle(
+  Default: (Background: #4a5568, LabelStyle: (FontSize: 12, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #5a6578, LabelStyle: (FontSize: 12, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #3a4558, LabelStyle: (FontSize: 12, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+Group {
+  Anchor: (Width: 500, Height: 560);
+  Background: #141c26(0.98);
+  LayoutMode: Top;
+  Padding: (Full: 20);
+
+  Label {
+    Text: "WHITELIST MANAGEMENT";
+    Anchor: (Height: 36);
+    Style: (FontSize: 20, TextColor: #ffffff, HorizontalAlignment: Center, RenderBold: true);
+  }
+
+  Group { Anchor: (Height: 1); Background: #2b3542; }
+  Group { Anchor: (Height: 12); }
+
+  Group {
+    LayoutMode: Left;
+    Anchor: (Height: 36);
+
+    Label {
+      Text: "Status:";
+      Anchor: (Width: 70);
+      Style: (FontSize: 14, TextColor: #96a9be, VerticalAlignment: Center);
+    }
+
+    Label #StatusLabel {
+      Text: "DISABLED";
+      Anchor: (Width: 90);
+      Style: (FontSize: 14, TextColor: #ff6b6b, RenderBold: true, VerticalAlignment: Center);
+    }
+
+    Group { FlexWeight: 1; }
+
+    TextButton #ToggleButton {
+      Text: "ENABLE";
+      Anchor: (Width: 90, Height: 30);
+      Style: @ToggleButtonStyle;
+    }
+  }
+
+  Group { Anchor: (Height: 12); }
+  Group { Anchor: (Height: 1); Background: #2b3542(0.5); }
+  Group { Anchor: (Height: 8); }
+
+  Label #PlayerCount {
+    Text: "PLAYERS (0)";
+    Anchor: (Height: 20);
+    Style: (FontSize: 11, TextColor: #4a5568, LetterSpacing: 2);
+  }
+
+  Group { Anchor: (Height: 4); }
+
+  Group #PlayerList {
+    Anchor: (Height: 120);
+    LayoutMode: TopScrolling;
+    Background: #0a1119(0.5);
+    Padding: (Full: 6);
+    ScrollbarStyle: (
+      Spacing: 6,
+      Size: 6,
+      Background: (TexturePath: "Common/Scrollbar.png", Border: 3),
+      Handle: (TexturePath: "Common/ScrollbarHandle.png", Border: 3),
+      HoveredHandle: (TexturePath: "Common/ScrollbarHandleHovered.png", Border: 3),
+      DraggedHandle: (TexturePath: "Common/ScrollbarHandleDragged.png", Border: 3)
+    );
+  }
+
+  Group { Anchor: (Height: 8); }
+  Group { Anchor: (Height: 1); Background: #2b3542(0.5); }
+  Group { Anchor: (Height: 8); }
+
+  Label #PendingCount {
+    Text: "PENDING REQUESTS (0)";
+    Anchor: (Height: 20);
+    Style: (FontSize: 11, TextColor: #e67e22, LetterSpacing: 2);
+  }
+
+  Group { Anchor: (Height: 4); }
+
+  Group #PendingList {
+    Anchor: (Height: 120);
+    LayoutMode: TopScrolling;
+    Background: #1a1a0a(0.5);
+    Padding: (Full: 6);
+    ScrollbarStyle: (
+      Spacing: 6,
+      Size: 6,
+      Background: (TexturePath: "Common/Scrollbar.png", Border: 3),
+      Handle: (TexturePath: "Common/ScrollbarHandle.png", Border: 3),
+      HoveredHandle: (TexturePath: "Common/ScrollbarHandleHovered.png", Border: 3),
+      DraggedHandle: (TexturePath: "Common/ScrollbarHandleDragged.png", Border: 3)
+    );
+  }
+
+  Group { Anchor: (Height: 12); }
+
+  Group {
+    LayoutMode: Left;
+    Anchor: (Height: 40);
+
+    Group { FlexWeight: 1; }
+
+    TextButton #AddButton {
+      Text: "+ ADD PLAYER";
+      Anchor: (Width: 130, Height: 36);
+      Style: @PrimaryButtonStyle;
+    }
+
+    Group { Anchor: (Width: 10); }
+
+    TextButton #RefreshButton {
+      Text: "REFRESH";
+      Anchor: (Width: 90, Height: 36);
+      Style: @SecondaryButtonStyle;
+    }
+
+    Group { Anchor: (Width: 10); }
+
+    TextButton #CloseButton {
+      Text: "CLOSE";
+      Anchor: (Width: 90, Height: 36);
+      Style: @SecondaryButtonStyle;
+    }
+
+    Group { FlexWeight: 1; }
+  }
+}

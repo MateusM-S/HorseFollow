@@ -1,0 +1,88 @@
+<!-- index.hyuiml - Layout HorseFollow conforme referência (HORSEFOLLOW, sidebar, preview montaria, barras, SAIR). HyUI: sem filhos dentro de button. -->
+<style>
+/* === style.css (conteúdo aplicado inline no HyUI) === */
+.panel-contents { layout-mode: Left; padding: 12; }
+.sidebar-wrap { anchor-width: 100; layout-mode: Top; padding: 8; }
+.content-wrap { layout-mode: Top; padding: 12; flex-weight: 1; }
+.tab-body { layout-mode: Top; padding: 8; }
+.section-title { font-size: 18; font-weight: bold; color: #ffffff; anchor-height: 24; }
+.mount-row { layout-mode: Left; padding: 8; }
+.mount-preview-box { anchor-width: 140; anchor-height: 140; }
+.mount-preview-img { anchor-width: 128; anchor-height: 128; }
+.mount-details { layout-mode: Top; padding: 8; flex-weight: 1; }
+.uuid-row { layout-mode: Left; padding: 4; }
+.uuid-input { anchor-height: 32; flex-weight: 1; }
+.reset-icon { anchor-width: 24; anchor-height: 24; }
+.reset-btn { anchor-width: 40; anchor-height: 32; }
+.bar-row { layout-mode: Left; padding: 4; }
+.bar-icon { anchor-width: 24; anchor-height: 24; }
+.bar-progress { anchor-width: 180; anchor-height: 16; flex-weight: 1; }
+.velocity-row { layout-mode: Left; padding: 4; }
+.velocity-icon { anchor-width: 24; anchor-height: 24; }
+.velocity-text { font-size: 14; color: #f3a634; anchor-height: 20; }
+.config-label { font-size: 14; color: #96a9be; anchor-height: 20; }
+.config-input { anchor-height: 34; }
+.config-checkbox { anchor-height: 24; }
+.config-buttons { layout-mode: Left; padding: 8; }
+.about-text { font-size: 14; color: #cccccc; white-space: wrap; anchor-width: 400; anchor-height: 260; }
+.sair-wrap { layout-mode: Right; padding: 8; }
+</style>
+<div class="page-overlay">
+  <div class="decorated-container" data-hyui-title="HORSEFOLLOW">
+    <div class="container-contents panel-contents">
+      <div class="sidebar-wrap">
+        <nav id="main-tabs" class="tabs" data-tabs="menu:Menu:menu-content,config:Configuração:config-content,about:Sobre:about-content" data-selected="menu"></nav>
+      </div>
+      <div class="content-wrap">
+        <div id="menu-content" class="tab-content tab-body" data-hyui-tab-id="menu">
+          <p class="section-title">Sua montaria</p>
+          <div class="mount-row">
+            <div class="mount-preview-box">
+              <img src="Horse.png" class="mount-preview-img"/>
+            </div>
+            <div class="mount-details">
+              <div class="uuid-row">
+                <input id="MountName" type="text" class="uuid-input" placeholder="MOUNT_UUID_PLACEHOLDER" value="MOUNT_NAME_VALUE_PLACEHOLDER"/>
+                <img src="Reset.png" class="reset-icon" alt="Reset"/>
+                <button id="ResetName" class="small-secondary-button reset-btn">↺</button>
+              </div>
+              <div class="bar-row">
+                <img src="Health.png" class="bar-icon"/>
+                <progress id="LifeBar" class="bar-progress" value="LIFE_PLACEHOLDER"></progress>
+              </div>
+              <div class="bar-row">
+                <img src="Stamina.png" class="bar-icon"/>
+                <progress id="StaminaBar" class="bar-progress" value="STAMINA_PLACEHOLDER"></progress>
+              </div>
+              <div class="velocity-row">
+                <img src="velocidade.png" class="velocity-icon"/>
+                <p class="velocity-text">Velocidade: 25 blocos/s</p>
+              </div>
+            </div>
+          </div>
+          <div class="sair-wrap">
+            <button id="SairMenu">SAIR</button>
+          </div>
+        </div>
+        <div id="config-content" class="tab-content tab-body" data-hyui-tab-id="config">
+          <p class="section-title">Configurações</p>
+          <p class="config-label">Distância do teleporte automático (em blocos):</p>
+          <input id="DistanceInput" type="text" class="config-input" placeholder="100" value="100"/>
+          <p class="config-label">Deseja desativar o teleporte automático?</p>
+          <input id="DisableTeleport" type="checkbox" class="config-checkbox" value="false"/>
+          <div class="config-buttons">
+            <button id="SaveButton">Salvar</button>
+            <button id="SairConfig" class="secondary-button">SAIR</button>
+          </div>
+        </div>
+        <div id="about-content" class="tab-content tab-body" data-hyui-tab-id="about">
+          <p class="section-title">Sobre o HorseFollow</p>
+          <p id="AboutText" class="about-text">This plugin creates a persistent bond between the player and a mount. Supports horses and rams. Binding is done using feed items (Horse Feed / Ram Feed). Once bound, the mount actively follows its owner. Follow distance and teleport behavior are configurable; automatic teleport can be fully disabled. The mount can be ordered to stay in place. You can call the bound mount using the Horn item or the /horsefollow call command. The goal is a simple, functional, and reliable taming system, without complex AI or unnecessary mechanics. Interaction is centered on items: feed to tame, horn to call. Commands are mainly used for configuration, status, and optional actions.</p>
+          <div class="sair-wrap">
+            <button id="SairAbout">SAIR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

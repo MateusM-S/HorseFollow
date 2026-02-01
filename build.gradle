@@ -11,6 +11,7 @@ repositories {
 
 dependencies {
     compileOnly files('libs/HytaleServer.jar')
+    implementation files('libs/HyUI-0.5.10-all.jar')
 }
 
 java {
@@ -36,9 +37,15 @@ processResources {
 
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from('src/main/resources') {
-        include 'manifest.json'
+    // 1) Classes e recursos do mod (obrigatório; sem isso o JAR não teria com.horsefollow nem Common/UI/...)
+    from sourceSets.main.output
+    // 2) HyUI e outros JARs do runtime (fat JAR para um único arquivo na pasta Mods)
+    from {
+        configurations.runtimeClasspath
+            .findAll { it.name.endsWith('jar') }
+            .collect { zipTree(it) }
     }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
     archiveFileName = "HorseFollow-${project.version}.jar"
 }
 

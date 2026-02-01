@@ -1,14 +1,23 @@
 {
+  "$Comment": "Pose na mão definida pela animação do conjunto (Item/Idle, Item/Crouch, etc.; Horn herda de Item).",
   "Model": "Items/Horn/Horn.blockymodel",
   "Texture": "Items/Horn/horn.png",
-  "PlayerAnimationsId": "Item",
+  "PlayerAnimationsId": "Horn",
+  "InteractionConfig": {
+    "Priorities": {
+      "Secondary": {
+        "MainHand": 1,
+        "OffHand": -1
+      }
+    }
+  },
   "Icon": "Icons/ItemsGenerated/Horn.png",
   "IconProperties": {
-    "Scale": 0.4,
+    "Scale": 0.5,
     "Rotation": [
-      21,
-      0,
-      32
+      264,
+      172,
+      24
     ],
     "Translation": [
       17,
@@ -23,6 +32,15 @@
     "Description": "server.items.Horn.description"
   },
   "DropOnDeath": true,
+  "Interactions": {
+    "Secondary": {
+      "Interactions": [
+        {
+          "Parent": "Horn_Charge"
+        }
+      ]
+    }
+  },
   "Tags": {
     "Type": [
       "Ingredient"
@@ -32,5 +50,6 @@
     "Items.Ingredients"
   ],
   "ItemLevel": 25,
-  "Quality": "Uncommon"
+  "Quality": "Uncommon",
+  "Scale": 3
 }

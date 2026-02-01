@@ -14,6 +14,8 @@ import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.horsefollow.FollowService;
 import com.horsefollow.Localization;
+import com.horsefollow.ui.ConfigPageHyUI;
+import com.hypixel.hytale.server.core.entity.entities.Player;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.Method;
@@ -26,8 +28,8 @@ public final class HorseFollowCommand extends AbstractCommand {
 
     private final FollowService service;
 
-    // /horsefollow [action]
-    // action: bind | unbind | status | distance | call | stay | reload | help
+    // /horsefollow [action] [value]
+    // action: bind | unbind | status | config | distance | call | stay | reload | help
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
@@ -37,7 +39,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         setAllowsExtraArguments(true);
 
         // Argumento posicional opcional
-        actionArg = withOptionalArg("action", "bind | unbind | status | distance | call | stay | reload | help", ArgTypes.STRING);
+        actionArg = withOptionalArg("action", "bind | unbind | status | config | distance | call | stay | reload | help", ArgTypes.STRING);
     }
 
     @Override
@@ -130,25 +132,35 @@ public final class HorseFollowCommand extends AbstractCommand {
                         }
                         break;
                     }
+                    case "config":
+                    case "ui": {
+                        Player playerComponent = store.getComponent(playerRef, Player.getComponentType());
+                        if (playerComponent != null) {
+                            com.hypixel.hytale.server.core.universe.PlayerRef playerRefComponent =
+                                    store.getComponent(playerRef, com.hypixel.hytale.server.core.universe.PlayerRef.getComponentType());
+                            if (playerRefComponent != null) {
+                                ConfigPageHyUI.open(playerRef, store, playerRefComponent, service, r -> worldExecute(entityStore, r));
+                            } else {
+                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
+                            }
+                        } else {
+                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
+                        }
+                        break;
+                    }
                     case "distance":
                     case "distancia": {
-                        if (distanceValue == null || distanceValue < 0) {
+                        Double value = distanceValue;
+                        if (value == null) {
                             context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.distance.invalid")));
                             break;
                         }
-                        boolean ok = service.updateTeleportDistance(distanceValue);
-                        if (ok) {
-                            if (distanceValue == 0) {
-                                context.sender().sendMessage(Message.raw(Localization.get(
-                                        store, playerRef, "horsefollow.command.distance.disabled")));
-                            } else {
-                                String template = Localization.get(store, playerRef, "horsefollow.command.distance.ok");
-                                String message = String.format(Locale.ROOT, template, distanceValue);
-                                context.sender().sendMessage(Message.raw(message));
-                            }
-                        } else {
+                        if (value < 0) {
                             context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.distance.invalid")));
+                            break;
                         }
+                        service.updateTeleportDistance(value);
+                        context.sender().sendMessage(Message.raw(String.format(Locale.ROOT, Localization.get(store, playerRef, "horsefollow.command.distance.ok"), value)));
                         break;
                     }
                     case "call":
@@ -186,20 +198,12 @@ public final class HorseFollowCommand extends AbstractCommand {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.reload.ok")));
                         break;
                     }
-                    case "feedconsumed": {
-                        if (!isOperator(context)) {
-                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.bind.operator_only")));
-                            break;
-                        }
-                        String message = Localization.get(store, playerRef, "horsefollow.feed.consumed");
-                        context.sender().sendMessage(Message.raw(message));
-                        break;
-                    }
                     case "help": {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.title")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.bind")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.unbind")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.status")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.config")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.distance")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.call")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.stay")));

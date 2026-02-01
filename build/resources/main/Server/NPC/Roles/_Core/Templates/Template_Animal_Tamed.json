@@ -563,7 +563,7 @@
         {
           "$Comment": "HorseFollow: Follow flock leader while idle (Seek). Disabled when mounted so idle anims do not run.",
           "Enabled": {
-            "Compute": "HorseFollowEnabled && !isEmptyStringArray(FlockArray) && !hasPassengers()"
+            "Compute": "HorseFollowEnabled && !isEmptyStringArray(FlockArray)"
           },
           "Continue": true,
           "Sensor": {
@@ -716,13 +716,13 @@
     {
       "Instructions": [
         {
-          "$Comment": "Idle behaviors (wander, eat, grazing, etc.) disabled when mounted so status animation is not overridden.",
+          "$Comment": "Idle behaviors (wander, eat, grazing, etc.). Note: engine may not provide hasPassengers(); when mounted, FollowService removes FlockMembership so HorseFollow does not match.",
           "Sensor": {
             "Type": "State",
             "State": "Idle"
           },
           "Enabled": {
-            "Compute": "!hasPassengers()"
+            "Compute": "true"
           },
           "Instructions": [
             {
@@ -813,6 +813,10 @@
               ]
             },
             {
+              "$Comment": "HorseFollow: eating/grazing only when not following (HorseFollowEnabled = when bound).",
+              "Enabled": {
+                "Compute": "!HorseFollowEnabled"
+              },
               "Sensor": {
                 "Type": "State",
                 "State": ".FindFood"
@@ -1074,7 +1078,10 @@
                   ]
                 },
                 {
-                  "$Comment": "TODO: grazing component seems to be borked",
+                  "$Comment": "TODO: grazing component seems to be borked. HorseFollow: only when not following.",
+                  "Enabled": {
+                    "Compute": "!HorseFollowEnabled"
+                  },
                   "Weight": 10,
                   "Instructions": [
                     {
@@ -1127,8 +1134,9 @@
                   ]
                 },
                 {
+                  "$Comment": "HorseFollow: seek food/eat only when not following.",
                   "Enabled": {
-                    "Compute": "!isEmpty(FoodBlockSet) || !isEmptyStringArray(FoodItemSet)"
+                    "Compute": "(!isEmpty(FoodBlockSet) || !isEmptyStringArray(FoodItemSet)) && !HorseFollowEnabled"
                   },
                   "Weight": 10,
                   "Instructions": [
@@ -1212,9 +1220,9 @@
                   ]
                 },
                 {
-                  "$Comment": "Nap.",
+                  "$Comment": "Nap. HorseFollow: only when not following.",
                   "Enabled": {
-                    "Compute": "DayTimeNapWeight > 0"
+                    "Compute": "DayTimeNapWeight > 0 && !HorseFollowEnabled"
                   },
                   "Weight": {
                     "Compute": "DayTimeNapWeight"
@@ -1233,7 +1241,10 @@
               ]
             },
             {
-              "$Comment": "Sleep time.",
+              "$Comment": "Sleep time. HorseFollow: only when not following.",
+              "Enabled": {
+                "Compute": "!HorseFollowEnabled"
+              },
               "Actions": [
                 {
                   "Type": "Timeout",
@@ -1279,9 +1290,9 @@
               ]
             },
             {
-              "$Comment": "Just a little nap.",
+              "$Comment": "Just a little nap. HorseFollow: only when not following.",
               "Enabled": {
-                "Compute": "DayTimeNapWeight > 0"
+                "Compute": "DayTimeNapWeight > 0 && !HorseFollowEnabled"
               },
               "Sensor": {
                 "Type": "State",

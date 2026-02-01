@@ -1,0 +1,10 @@
+{
+  "Parent": "Item",
+  "Animations": {
+    "Horn_Blow": {
+      "FirstPerson": "Characters/Animations/Items/Horn/HornUseAnimacao_FPS.blockyanim",
+      "ThirdPerson": "Characters/Animations/Items/Horn/HornUseAnimação.blockyanim",
+      "Speed": 1
+    }
+  }
+}

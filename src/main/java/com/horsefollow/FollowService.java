@@ -41,8 +41,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public final class FollowService {
 
-    private static final boolean DEBUG = false;
-
     // playerRef -> horseRef
     private final Map<Ref<EntityStore>, Ref<EntityStore>> bound = new ConcurrentHashMap<>();
     // playerRef -> horse UUID (stable across entity ref changes)
@@ -66,6 +64,12 @@ public final class FollowService {
     private final Object persistLock = new Object();
     private final Path bindsFile;
     private final Path stayFile;
+    // playerUuid -> follow desativado (montaria não segue; persistido)
+    private final Set<UUID> followDisabledByPlayerUuid = ConcurrentHashMap.newKeySet();
+    private final Path followDisabledFile;
+    // playerUuid -> teleporte automático desativado (apenas checkbox na UI; persistido)
+    private final Set<UUID> teleportDisabledByPlayerUuid = ConcurrentHashMap.newKeySet();
+    private final Path teleportDisabledFile;
 
     // tuning
     private static final String FRIENDLY_SUFFIX = "_Friendly";
@@ -108,9 +112,13 @@ public final class FollowService {
         this.bindsFile = dataDirectory != null ? dataDirectory.resolve("binds.txt") : null;
         this.stayFile = dataDirectory != null ? dataDirectory.resolve("stay.txt") : null;
         this.configFile = dataDirectory != null ? dataDirectory.resolve("config.properties") : null;
+        this.followDisabledFile = dataDirectory != null ? dataDirectory.resolve("follow_disabled.txt") : null;
+        this.teleportDisabledFile = dataDirectory != null ? dataDirectory.resolve("teleport_disabled.txt") : null;
         reloadConfig();
         loadPersistedBinds();
         loadPersistedStay();
+        loadFollowDisabled();
+        loadTeleportDisabled();
     }
 
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -129,10 +137,8 @@ public final class FollowService {
         UUID horseUuid = tryReadUuid(horseRef);
         if (horseUuid != null) {
             boundUuids.put(playerRef, horseUuid);
-            debug("bind uuid playerRef=" + playerRef + " horseUuid=" + horseUuid);
             persistBind(playerRef, horseUuid);
         }
-        debug("bind playerRef=" + playerRef + " horseRef=" + horseRef);
         if (!applyFriendlyRole(playerRef, horseRef)) {
             pendingFriendlyRole.add(playerRef);
         }
@@ -189,7 +195,6 @@ public final class FollowService {
         lastTeleportTickByPlayer.remove(playerRef);
         originalRoleByPlayer.remove(playerRef);
         pendingFriendlyRole.remove(playerRef);
-        debug("unbind playerRef=" + playerRef);
     }
 
     public boolean isStaying(Ref<EntityStore> playerRef) {
@@ -252,6 +257,86 @@ public final class FollowService {
         return bound.get(playerRef);
     }
 
+    /** UUID da montaria vinculada ao jogador (para exibir na UI). */
+    public UUID getBoundHorseUuid(Ref<EntityStore> playerRef) {
+        if (playerRef == null) return null;
+        return boundUuids.get(playerRef);
+    }
+
+    /**
+     * Nome do tipo da montaria vinculada (ex.: "Horse", "Ram") para UI (ícone, stats).
+     * Retorna null se não houver vínculo ou role não identificado.
+     */
+    public String getMountTypeName(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        Ref<EntityStore> horseRef = getBoundHorse(playerRef);
+        if (store == null || playerRef == null || horseRef == null || !horseRef.isValid()) return null;
+        return resolveBaseRoleName(store, playerRef, horseRef);
+    }
+
+    /**
+     * Stats de exibição da montaria (MaxHealth, MaxSpeed do role; current Health/Stamina se disponível).
+     * Valores do JSON: Horse_Friendly 124 HP, 10 speed; Ram_Friendly 124 HP, 8 speed.
+     */
+    public MountDisplayStats getMountDisplayStats(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        Ref<EntityStore> horseRef = getBoundHorse(playerRef);
+        if (store == null || playerRef == null || horseRef == null || !horseRef.isValid()) {
+            return new MountDisplayStats(124, 124, 10, 124, 124);
+        }
+        String type = resolveBaseRoleName(store, playerRef, horseRef);
+        int maxHealth = 124;
+        int maxSpeed = "Ram".equals(type) ? 8 : 10;
+        int maxStamina = 124;
+        int currentHealth = maxHealth;
+        int currentStamina = maxStamina;
+        try {
+            Object statMap = tryGetEntityStatMap(store, horseRef);
+            if (statMap != null) {
+                Double health = tryGetStatValue(statMap, "Health");
+                if (health != null) currentHealth = (int) Math.max(0, Math.round(health));
+                Double stamina = tryGetStatValue(statMap, "Stamina");
+                if (stamina != null) currentStamina = (int) Math.max(0, Math.round(stamina));
+            }
+        } catch (Throwable ignored) {}
+        return new MountDisplayStats(maxHealth, maxStamina, maxSpeed, currentHealth, currentStamina);
+    }
+
+    /** DTO para exibir vida/estamina/velocidade da montaria na UI. */
+    public static final class MountDisplayStats {
+        public final int maxHealth;
+        public final int maxStamina;
+        public final int maxSpeed;
+        public final int currentHealth;
+        public final int currentStamina;
+
+        public MountDisplayStats(int maxHealth, int maxStamina, int maxSpeed, int currentHealth, int currentStamina) {
+            this.maxHealth = maxHealth;
+            this.maxStamina = maxStamina;
+            this.maxSpeed = maxSpeed;
+            this.currentHealth = currentHealth;
+            this.currentStamina = currentStamina;
+        }
+    }
+
+    private static Object tryGetEntityStatMap(Store<EntityStore> store, Ref<EntityStore> entityRef) {
+        try {
+            Class<?> c = Class.forName("com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap");
+            java.lang.reflect.Method getType = c.getMethod("getComponentType");
+            Object type = getType.invoke(null);
+            return store.getComponent(entityRef, (com.hypixel.hytale.component.ComponentType) type);
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static Double tryGetStatValue(Object entityStatMap, String statId) {
+        if (entityStatMap == null || statId == null) return null;
+        try {
+            java.lang.reflect.Method getValue = entityStatMap.getClass().getMethod("getValue", Object.class);
+            Object val = getValue.invoke(entityStatMap, statId);
+            if (val instanceof Number) return ((Number) val).doubleValue();
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     public FollowConfig getConfig() {
         return configRef.get();
     }
@@ -272,6 +357,155 @@ public final class FollowService {
     /** Alcance (blocos) para vincular montaria ao usar Horse_Feed/Ram_Feed. */
     public double getFeedBindRange() {
         return configRef.get().getFeedBindRange();
+    }
+
+    /** Retorna true se o jogador desativou o acompanhamento da montaria (não segue). */
+    public boolean isFollowDisabled(Ref<EntityStore> playerRef) {
+        if (playerRef == null) return false;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        return isFollowDisabled(playerUuid);
+    }
+
+    /** Retorna true se o jogador (por UUID) desativou o acompanhamento. Use quando tiver o UUID do store. */
+    public boolean isFollowDisabled(UUID playerUuid) {
+        return playerUuid != null && followDisabledByPlayerUuid.contains(playerUuid);
+    }
+
+    /** Ativa ou desativa o acompanhamento da montaria (follow). Persistido. */
+    public void setFollowDisabled(Ref<EntityStore> playerRef, boolean disabled) {
+        if (playerRef == null) return;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid != null) setFollowDisabled(playerUuid, disabled);
+    }
+
+    /** Ativa ou desativa o acompanhamento por UUID (ex.: ao salvar na UI). Persistido. */
+    public void setFollowDisabled(UUID playerUuid, boolean disabled) {
+        if (playerUuid == null) return;
+        if (disabled) {
+            followDisabledByPlayerUuid.add(playerUuid);
+            for (Map.Entry<Ref<EntityStore>, Ref<EntityStore>> e : bound.entrySet()) {
+                if (playerUuid.equals(tryReadPlayerUuid(e.getKey()))) {
+                    Ref<EntityStore> horseRef = e.getValue();
+                    if (horseRef != null && horseRef.isValid()) {
+                        Store<EntityStore> store = horseRef.getStore();
+                        if (store != null) {
+                            EntityStore entityStore = store.getExternalData();
+                            worldExecute(entityStore, () -> store.tryRemoveComponent(horseRef, FlockMembership.getComponentType()));
+                        }
+                    }
+                    break;
+                }
+            }
+        } else {
+            followDisabledByPlayerUuid.remove(playerUuid);
+        }
+        saveFollowDisabled();
+    }
+
+    private void loadFollowDisabled() {
+        if (followDisabledFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(followDisabledFile.getParent());
+                if (!Files.exists(followDisabledFile)) return;
+                List<String> lines = Files.readAllLines(followDisabledFile, StandardCharsets.UTF_8);
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                    try {
+                        followDisabledByPlayerUuid.add(UUID.fromString(trimmed));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+            } catch (IOException ignored) {}
+        }
+    }
+
+    private void saveFollowDisabled() {
+        if (followDisabledFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(followDisabledFile.getParent());
+                List<String> lines = new ArrayList<>();
+                for (UUID uuid : followDisabledByPlayerUuid) {
+                    lines.add(uuid.toString());
+                }
+                Path tmp = followDisabledFile.resolveSibling("follow_disabled.txt.tmp");
+                Files.write(tmp, lines, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp, followDisabledFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    Files.move(tmp, followDisabledFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException ignored) {}
+        }
+    }
+
+    /** Retorna true se o jogador desativou o teleporte automático (checkbox na Config). */
+    public boolean isTeleportDisabled(Ref<EntityStore> playerRef) {
+        if (playerRef == null) return false;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        return isTeleportDisabled(playerUuid);
+    }
+
+    /** Retorna true se o jogador (por UUID) desativou o teleporte. Use quando tiver o UUID do store. */
+    public boolean isTeleportDisabled(UUID playerUuid) {
+        return playerUuid != null && teleportDisabledByPlayerUuid.contains(playerUuid);
+    }
+
+    /** Ativa ou desativa o teleporte automático para o jogador. Persistido. */
+    public void setTeleportDisabled(Ref<EntityStore> playerRef, boolean disabled) {
+        if (playerRef == null) return;
+        UUID playerUuid = tryReadPlayerUuid(playerRef);
+        if (playerUuid != null) setTeleportDisabled(playerUuid, disabled);
+    }
+
+    /** Ativa ou desativa o teleporte por UUID (ex.: ao salvar na UI). Persistido. */
+    public void setTeleportDisabled(UUID playerUuid, boolean disabled) {
+        if (playerUuid == null) return;
+        if (disabled) {
+            teleportDisabledByPlayerUuid.add(playerUuid);
+        } else {
+            teleportDisabledByPlayerUuid.remove(playerUuid);
+        }
+        saveTeleportDisabled();
+    }
+
+    private void loadTeleportDisabled() {
+        if (teleportDisabledFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(teleportDisabledFile.getParent());
+                if (!Files.exists(teleportDisabledFile)) return;
+                List<String> lines = Files.readAllLines(teleportDisabledFile, StandardCharsets.UTF_8);
+                for (String line : lines) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                    try {
+                        teleportDisabledByPlayerUuid.add(UUID.fromString(trimmed));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+            } catch (IOException ignored) {}
+        }
+    }
+
+    private void saveTeleportDisabled() {
+        if (teleportDisabledFile == null) return;
+        synchronized (persistLock) {
+            try {
+                Files.createDirectories(teleportDisabledFile.getParent());
+                List<String> lines = new ArrayList<>();
+                for (UUID uuid : teleportDisabledByPlayerUuid) {
+                    lines.add(uuid.toString());
+                }
+                Path tmp = teleportDisabledFile.resolveSibling("teleport_disabled.txt.tmp");
+                Files.write(tmp, lines, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp, teleportDisabledFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    Files.move(tmp, teleportDisabledFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException ignored) {}
+        }
     }
 
     private boolean applyFriendlyRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -396,7 +630,6 @@ public final class FollowService {
                 continue;
             }
             if (!horseRef.isValid()) {
-                debug("horseRef invalid for playerRef=" + playerRef + " horseRef=" + horseRef);
                 tryRebind(playerRef);
                 continue;
             }
@@ -497,8 +730,18 @@ public final class FollowService {
                         return;
                     }
 
+                    // Se o jogador desativou o acompanhamento, remove flock e não faz follow/teleporte
+                    UUID playerUuid = tryReadPlayerUuid(playerRef);
+                    if (playerUuid != null && followDisabledByPlayerUuid.contains(playerUuid)) {
+                        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+                        return;
+                    }
+
                     // garante que (desmontado) existe flock e o player é o líder
                     ensureFollowFlock(store, playerRef, horseRef);
+
+                    // Teleporte automático só se o jogador não desativou pela checkbox (Config)
+                    if (playerUuid != null && teleportDisabledByPlayerUuid.contains(playerUuid)) return;
 
                     if (teleportsThisTick.get() >= maxTeleportsPerTick) return;
                     Long lastTick = lastTeleportTickByPlayer.get(playerRef);
@@ -556,7 +799,11 @@ public final class FollowService {
         Vector3d p = playerTf.getPosition();
         if (p == null) return false;
         FollowConfig config = configRef.get();
-        Vector3d target = new Vector3d(p.getX(), p.getY(), p.getZ() - config.getBehindOffset());
+        double dist = config.getBehindOffset();
+        Vector3d target = positionInFrontOfPlayer(playerTf, p, dist);
+        if (target == null) {
+            target = new Vector3d(p.getX(), p.getY(), p.getZ() + dist);
+        }
         horseTf.teleportPosition(target);
         lastTeleportTickByPlayer.put(playerRef, tickCounter);
         // depois de chamar, reativa follow (se não estiver montado)
@@ -566,6 +813,51 @@ public final class FollowService {
             store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
         }
         return true;
+    }
+
+    /**
+     * Calcula posição à frente do jogador (na direção que ele olha), usando rotação do TransformComponent.
+     * Retorna null se não conseguir obter yaw (fallback: usar offset em Z).
+     */
+    private static Vector3d positionInFrontOfPlayer(TransformComponent playerTf, Vector3d p, double distance) {
+        if (playerTf == null || p == null) return null;
+        try {
+            Double yawRad = null;
+            for (String methodName : new String[] { "getYaw", "getRotationY", "getYawRadians" }) {
+                try {
+                    Method m = playerTf.getClass().getMethod(methodName);
+                    Object result = m.invoke(playerTf);
+                    if (result instanceof Number) {
+                        yawRad = ((Number) result).doubleValue();
+                        break;
+                    }
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+            if (yawRad == null) {
+                Method getRotation = playerTf.getClass().getMethod("getRotation");
+                Object rot = getRotation.invoke(playerTf);
+                if (rot != null) {
+                    for (String getter : new String[] { "getYaw", "getY", "y" }) {
+                        try {
+                            Method m = rot.getClass().getMethod(getter);
+                            Object result = m.invoke(rot);
+                            if (result instanceof Number) {
+                                yawRad = ((Number) result).doubleValue();
+                                break;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+            }
+            if (yawRad == null) return null;
+            double x = p.getX() + Math.sin(yawRad) * distance;
+            double z = p.getZ() - Math.cos(yawRad) * distance;
+            return new Vector3d(x, p.getY(), z);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static void forceNpcIdleState(Store<EntityStore> store, Ref<EntityStore> npcRef) {
@@ -626,7 +918,6 @@ public final class FollowService {
     private void tryRebind(Ref<EntityStore> playerRef) {
         Store<EntityStore> store = playerRef.getStore();
         if (store == null) {
-            debug("rebind store null playerRef=" + playerRef);
             bound.remove(playerRef);
             return;
         }
@@ -636,7 +927,6 @@ public final class FollowService {
             if (resolved == null) {
                 resolved = resolveHorseFromPlayer(store, playerRef);
             }
-            debug("rebind resolved playerRef=" + playerRef + " resolved=" + resolved);
             if (resolved != null && resolved.isValid()) {
                 bound.put(playerRef, resolved);
                 UUID resolvedUuid = tryReadUuid(resolved);
@@ -798,18 +1088,12 @@ public final class FollowService {
         EntityStore entityStore = store.getExternalData();
         if (entityStore == null) return null;
         Ref<EntityStore> ref = entityStore.getRefFromUUID(uuid);
-        debug("resolve by uuid playerRef=" + playerRef + " horseUuid=" + uuid + " ref=" + ref);
         if (ref != null && ref.isValid()) {
             return ref;
         }
         return null;
     }
 
-    /**
-     * Encontra a montaria válida mais próxima do jogador dentro do alcance (para uso do item Feed).
-     * Horse_Feed: target Horse ou Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
-     * Retorna null se não houver alvo válido no alcance.
-     */
     /**
      * Encontra a montaria válida mais próxima do jogador dentro do alcance (para uso do item Feed).
      * Horse_Feed: target Horse ou Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
@@ -863,12 +1147,9 @@ public final class FollowService {
         MountedComponent mounted = store.getComponent(playerRef, MountedComponent.getComponentType());
         if (mounted != null) {
             Ref<EntityStore> mountedTo = mounted.getMountedToEntity();
-            debug("resolve mounted component mountedTo=" + mountedTo);
             if (mountedTo != null && mountedTo.isValid()) {
                 return mountedTo;
             }
-        } else {
-            debug("resolve mounted component missing for playerRef=" + playerRef);
         }
         Ref<EntityStore> byPassenger = findMountFromPassengers(store, playerRef);
         if (byPassenger != null) return byPassenger;
@@ -891,14 +1172,12 @@ public final class FollowService {
                 for (Ref<EntityStore> passenger : passengers) {
                     if (playerRef.equals(passenger)) {
                         found.set(chunk.getReferenceTo(i));
-                        debug("resolve found via passengers mountRef=" + found.get());
                         return;
                     }
                     if (playerObj != null) {
                         PlayerRef passengerObj = store.getComponent(passenger, PlayerRef.getComponentType());
                         if (passengerObj != null && passengerObj.getUuid().equals(playerObj.getUuid())) {
                             found.set(chunk.getReferenceTo(i));
-                            debug("resolve found via passenger uuid mountRef=" + found.get());
                             return;
                         }
                     }
@@ -923,7 +1202,6 @@ public final class FollowService {
                 PlayerRef owner = npcMount.getOwnerPlayerRef();
                 if (owner != null && owner.getUuid().equals(playerObj.getUuid())) {
                     found.set(chunk.getReferenceTo(i));
-                    debug("resolve found via npc mount owner mountRef=" + found.get());
                     return;
                 }
             }
@@ -995,6 +1273,8 @@ public final class FollowService {
                         } else {
                             applyStayAtAnchor(store, playerRef, horseRef, ps.anchor);
                         }
+                    } else if (followDisabledByPlayerUuid.contains(playerUuid)) {
+                        store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
                     } else {
                         ensureFollowFlock(store, playerRef, horseRef);
                     }
@@ -1023,8 +1303,7 @@ public final class FollowService {
                         // ignore malformed lines
                     }
                 }
-            } catch (IOException e) {
-                debug("persist load failed: " + e.getMessage());
+            } catch (IOException ignored) {
             }
         }
     }
@@ -1045,8 +1324,7 @@ public final class FollowService {
                 } catch (IOException e) {
                     Files.move(tmp, bindsFile, StandardCopyOption.REPLACE_EXISTING);
                 }
-            } catch (IOException e) {
-                debug("persist save failed: " + e.getMessage());
+            } catch (IOException ignored) {
             }
         }
     }
@@ -1169,12 +1447,6 @@ public final class FollowService {
         }
 
         return false;
-    }
-
-    private static void debug(String message) {
-        if (DEBUG) {
-            System.out.println("[HorseFollow] " + message);
-        }
     }
 
     /**
