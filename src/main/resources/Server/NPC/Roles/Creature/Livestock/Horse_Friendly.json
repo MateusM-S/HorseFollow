@@ -8,7 +8,8 @@
     "HorseFollowEnabled": true,
     "FlockArray": [
       "Horse",
-      "Horse_Foal"
+      "Horse_Foal",
+      "Black_Horse"
     ],
     "LovedItems": [
       "Plant_Crop_Carrot_Item",

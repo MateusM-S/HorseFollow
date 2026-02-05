@@ -143,6 +143,12 @@ alwaysApply: true
 - Ícones do projeto ficam em **`src/main/resources/Common/Icons/`** (ex.: `Common/Icons/ItemsGenerated/Horn.png`, `Apple_Feed_Icon.png`, `Carrot_Feed_Icon.png`).
 - Podem ser referenciados em .ui ou JSONs quando for necessário (ex.: imagem da montaria na aba Menu, ícones de abas).
 
+## Ordem de carregamento (a “ponte”) — Groups, Spawn e Black_Horse
+
+- O erro “Black_Horse does not exist as a role!” / Tag Set / NPCSpawn acontece porque **Groups** (Tag Set) e **Spawn** (WorldNPCSpawn) são validados pelo jogo antes de os **Roles** do mod estarem no registro (ordem de processamento de assets).
+- Não usar `LoadBefore` para carregar o pack antes do base (quebraria a base do jogo). Se o erro persistir, ajustar ou remover Group/Spawn que referenciem roles do mod (ex.: Black_Horse).
+- Pesquisa sobre criação de entidades, role, spawn e ordem de carregamento: **`libs/Analise/RELATORIO_ROLE_SPAWN_ORDEM_CARREGAMENTO.md`**.
+
 ## Configuração (sem UI)
 
 - Não há tela de configuração (Custom UI). A distância de teleporte e demais opções são alteradas via **`/horsefollow distance <valor>`** e **`/horsefollow reload`**.

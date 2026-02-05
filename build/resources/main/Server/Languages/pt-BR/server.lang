@@ -43,3 +43,4 @@ items.Soul_Amulet_Full.description= Contém a alma de um cavalo esqueleto. Use p
 horsefollow.soul_capture.ok=[HorseFollow] Alma capturada no amuleto!
 horsefollow.soul_release.ok=[HorseFollow] Cavalo esqueleto libertado do amuleto!
 horsefollow.soul_recollect.ok=[HorseFollow] Cavalo recolhido ao amuleto!
+server.npcRoles.Black_Horse.name=Cavalo Preto

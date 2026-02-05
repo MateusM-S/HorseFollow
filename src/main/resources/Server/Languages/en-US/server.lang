@@ -43,3 +43,4 @@ items.Soul_Amulet_Full.description= Contains a skeleton horse soul. Use to summo
 horsefollow.soul_capture.ok=[HorseFollow] Soul captured in the amulet!
 horsefollow.soul_release.ok=[HorseFollow] Skeleton horse released from the amulet!
 horsefollow.soul_recollect.ok=[HorseFollow] Horse recollected into the amulet!
+server.npcRoles.Black_Horse.name=Black Horse

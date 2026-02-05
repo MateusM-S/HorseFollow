@@ -148,13 +148,14 @@ public final class FollowService {
             boundUuids.put(playerRef, horseUuid);
             persistBind(playerRef, horseUuid);
         }
-        if (!applyFriendlyRole(playerRef, horseRef)) {
-            pendingFriendlyRole.add(playerRef);
-        }
         Store<EntityStore> store = horseRef.getStore();
         if (store != null) {
             EntityStore entityStore = store.getExternalData();
             worldExecute(entityStore, () -> {
+                // Aplica o role _Friendly primeiro (ex.: Black_Horse -> Black_Horse_Friendly), para o flock e o AI de follow usarem o role correto.
+                if (!tryApplyFriendlyRoleNow(store, playerRef, horseRef, true)) {
+                    pendingFriendlyRole.add(playerRef);
+                }
                 // evita conflito com montaria: só ativa flock-follow quando desmontado
                 UUID playerUuid = tryReadPlayerUuid(playerRef);
                 PersistedStay ps = (playerUuid != null) ? persistedStay.get(playerUuid) : null;
@@ -702,6 +703,7 @@ public final class FollowService {
                     if (pendingFriendlyRole.contains(playerRef)) {
                         if (tryApplyFriendlyRoleNow(store, playerRef, horseRef, true)) {
                             pendingFriendlyRole.remove(playerRef);
+                            ensureFollowFlock(store, playerRef, horseRef);
                         }
                     }
 
@@ -1052,7 +1054,7 @@ public final class FollowService {
 
     /**
      * Encontra a montaria válida mais próxima do jogador dentro do alcance (para uso do item Feed).
-     * Horse_Feed: target Horse ou Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
+     * Horse_Feed: target Horse, Horse_Friendly, Black_Horse ou Black_Horse_Friendly; Ram_Feed: target Ram ou Ram_Friendly.
      * Montaria já vinculada a este jogador é excluída do scan (evita revincular com F).
      * Retorna null se não houver alvo válido no alcance.
      */
@@ -1063,11 +1065,22 @@ public final class FollowService {
         if (playerTf == null) return null;
         Vector3d playerPos = playerTf.getPosition();
         if (playerPos == null) return null;
-        String role1 = horseFeed ? "Horse" : "Ram";
-        String role2 = horseFeed ? "Horse_Friendly" : "Ram_Friendly";
-        int idx1 = NPCPlugin.get().getIndex(role1);
-        int idx2 = NPCPlugin.get().getIndex(role2);
-        if (idx1 < 0 && idx2 < 0) return null;
+        int[] allowedRoleIndices = horseFeed
+            ? new int[]{
+                NPCPlugin.get().getIndex("Horse"),
+                NPCPlugin.get().getIndex("Horse_Friendly"),
+                NPCPlugin.get().getIndex("Black_Horse"),
+                NPCPlugin.get().getIndex("Black_Horse_Friendly")
+            }
+            : new int[]{
+                NPCPlugin.get().getIndex("Ram"),
+                NPCPlugin.get().getIndex("Ram_Friendly")
+            };
+        boolean anyValid = false;
+        for (int idx : allowedRoleIndices) {
+            if (idx >= 0) { anyValid = true; break; }
+        }
+        if (!anyValid) return null;
         double rangeSq = range * range;
         AtomicReference<Ref<EntityStore>> closest = new AtomicReference<>();
         AtomicReference<Double> closestDistSq = new AtomicReference<>(Double.MAX_VALUE);
@@ -1081,7 +1094,11 @@ public final class FollowService {
                 NPCEntity npc = chunk.getComponent(i, NPCEntity.getComponentType());
                 if (npc == null) continue;
                 int roleIndex = npc.getRoleIndex();
-                if (roleIndex != idx1 && roleIndex != idx2) continue;
+                boolean roleAllowed = false;
+                for (int idx : allowedRoleIndices) {
+                    if (idx >= 0 && roleIndex == idx) { roleAllowed = true; break; }
+                }
+                if (!roleAllowed) continue;
                 TransformComponent tf = store.getComponent(ref, TransformComponent.getComponentType());
                 if (tf == null) continue;
                 Vector3d pos = tf.getPosition();

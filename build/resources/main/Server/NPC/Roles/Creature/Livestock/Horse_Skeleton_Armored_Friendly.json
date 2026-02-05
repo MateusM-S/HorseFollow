@@ -25,7 +25,7 @@
     "MemoriesCategory": "Undead",
     "IsMountable": true,
     "MountAnchorX": 0,
-    "MountAnchorY": 1.6,
+    "MountAnchorY": 1.75,
     "MountAnchorZ": 0,
     "_InteractionVars": {
       "Melee_Start": {

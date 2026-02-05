@@ -1,0 +1,24 @@
+{
+  "IncludeGroups": [
+    "Bison",
+    "Boar",
+    "Camel",
+    "Cow",
+    "Goat",
+    "Horse",
+    "Black_Horse",
+    "Mouflon",
+    "Moose",
+    "Pig",
+    "Ram",
+    "Sheep",
+    "Mouflon",
+    "Horse",
+    "Warthog",
+    "Deer"
+  ],
+  "IncludeRoles": [
+    "Antelope",
+    "Tetrabird"
+  ]
+}
