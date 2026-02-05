@@ -1,0 +1,26 @@
+{
+    "Input": [
+      {
+        "ItemId": "Horn",
+        "Quantity": 1
+      }
+    ],
+    "PrimaryOutput": {
+      "ItemId": "Ingredient_Chitin_Sturdy",
+      "Quantity": 2
+    },
+    "Output": [
+      {
+        "ItemId": "Ingredient_Chitin_Sturdy",
+        "Quantity": 2
+      }
+    ],
+    "BenchRequirement": [
+      {
+        "Type": "Processing",
+        "Id": "Salvagebench"
+      }
+    ],
+    "TimeSeconds": 2
+  }
+  

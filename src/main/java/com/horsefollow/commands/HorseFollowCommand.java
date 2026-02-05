@@ -14,8 +14,6 @@ import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.horsefollow.FollowService;
 import com.horsefollow.Localization;
-import com.horsefollow.ui.ConfigPageHyUI;
-import com.hypixel.hytale.server.core.entity.entities.Player;
 
 import javax.annotation.Nonnull;
 import java.lang.reflect.Method;
@@ -29,7 +27,7 @@ public final class HorseFollowCommand extends AbstractCommand {
     private final FollowService service;
 
     // /horsefollow [action] [value]
-    // action: bind | unbind | status | config | distance | call | stay | reload | help
+    // action: bind | unbind | status | config | distance | stay | reload | help (call via Horn item)
     private final OptionalArg<String> actionArg;
 
     public HorseFollowCommand(FollowService service) {
@@ -39,7 +37,7 @@ public final class HorseFollowCommand extends AbstractCommand {
         setAllowsExtraArguments(true);
 
         // Argumento posicional opcional
-        actionArg = withOptionalArg("action", "bind | unbind | status | config | distance | call | stay | reload | help", ArgTypes.STRING);
+        actionArg = withOptionalArg("action", "bind | unbind | status | config | distance | stay | reload | help", ArgTypes.STRING);
     }
 
     @Override
@@ -134,18 +132,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                     }
                     case "config":
                     case "ui": {
-                        Player playerComponent = store.getComponent(playerRef, Player.getComponentType());
-                        if (playerComponent != null) {
-                            com.hypixel.hytale.server.core.universe.PlayerRef playerRefComponent =
-                                    store.getComponent(playerRef, com.hypixel.hytale.server.core.universe.PlayerRef.getComponentType());
-                            if (playerRefComponent != null) {
-                                ConfigPageHyUI.open(playerRef, store, playerRefComponent, service, r -> worldExecute(entityStore, r));
-                            } else {
-                                context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
-                            }
-                        } else {
-                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
-                        }
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.config_use_distance")));
                         break;
                     }
                     case "distance":
@@ -165,14 +152,7 @@ public final class HorseFollowCommand extends AbstractCommand {
                     }
                     case "call":
                     case "chamar": {
-                        Ref<EntityStore> horseRef = service.getBoundHorse(playerRef);
-                        if (horseRef == null || !horseRef.isValid()) {
-                            context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.call.no_bond")));
-                            break;
-                        }
-                        boolean ok = service.teleportHorseNearPlayer(store, playerRef, horseRef);
-                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef,
-                                ok ? "horsefollow.command.call.ok" : "horsefollow.command.call.fail")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.call.use_item")));
                         break;
                     }
                     case "stay":
@@ -203,9 +183,8 @@ public final class HorseFollowCommand extends AbstractCommand {
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.bind")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.unbind")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.status")));
-                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.config")));
-                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.distance")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.call")));
+                        context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.distance")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.stay")));
                         context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.help.reload")));
                         break;
@@ -215,11 +194,6 @@ public final class HorseFollowCommand extends AbstractCommand {
                         break;
                 }
             } catch (Throwable t) {
-                // fallback pra não derrubar o servidor
-                try {
-                    System.out.println("[HorseFollow] Command error action=" + actionFinal + " input=" + context.getInputString());
-                    t.printStackTrace();
-                } catch (Throwable ignored) {}
                 try {
                     context.sender().sendMessage(Message.raw(Localization.get(store, playerRef, "horsefollow.command.error")));
                 } catch (Throwable ignored) {}
@@ -294,17 +268,15 @@ public final class HorseFollowCommand extends AbstractCommand {
                 List<Ref<EntityStore>> passengers = mountedBy.getPassengers();
                 if (passengers == null) continue;
                 for (Ref<EntityStore> passenger : passengers) {
-                    if (playerRef.equals(passenger)) {
-                        found.set(chunk.getReferenceTo(i));
-                        return;
-                    }
-                    if (playerObj != null) {
+                    boolean isPlayer = playerRef.equals(passenger);
+                    if (!isPlayer && playerObj != null) {
                         com.hypixel.hytale.server.core.universe.PlayerRef passengerObj =
                                 store.getComponent(passenger, com.hypixel.hytale.server.core.universe.PlayerRef.getComponentType());
-                        if (passengerObj != null && passengerObj.getUuid().equals(playerObj.getUuid())) {
-                            found.set(chunk.getReferenceTo(i));
-                            return;
-                        }
+                        isPlayer = passengerObj != null && passengerObj.getUuid().equals(playerObj.getUuid());
+                    }
+                    if (isPlayer) {
+                        found.set(chunk.getReferenceTo(i));
+                        return;
                     }
                 }
             }

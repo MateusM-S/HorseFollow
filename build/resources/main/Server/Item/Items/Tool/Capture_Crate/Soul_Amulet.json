@@ -1,0 +1,76 @@
+{
+  "TranslationProperties": {
+    "Name": "server.items.Soul_Amulet.name",
+    "Description": "server.items.Soul_Amulet.description"
+  },
+  "PlayerAnimationsId": "Item",
+  "MaxStack": 1,
+  "ItemLevel": 50,
+  "Recipe": {
+    "TimeSeconds": 6,
+    "Input": [
+      {
+        "Quantity": 1,
+        "ResourceTypeId": "Ingredient_Voidheart"
+      },
+      {
+        "ItemId": "Ingredient_Crystal_Purple",
+        "Quantity": 10
+      },
+      {
+        "ResourceTypeId": "Ingredient_Bar_Silver",
+        "Quantity": 4
+      }
+    ],
+    "BenchRequirement": [
+      {
+        "Type": "Crafting",
+        "Categories": [
+          "Arcane_Misc"
+        ],
+        "Id": "Arcanebench",
+        "RequiredTierLevel": 1
+      }
+    ]
+  },
+  "Interactions": {
+    "Primary": {
+      "Interactions": [
+        {
+          "Type": "Simple",
+          "Effects": {
+            "ItemAnimationId": "Interact"
+          },
+          "RunTime": 0.05
+        }
+      ]
+    }
+  },
+  "IconProperties": {
+    "Scale": 1.1,
+    "Rotation": [
+      90,
+      20,
+      22.5
+    ],
+    "Translation": [
+      0,
+      0
+    ]
+  },
+  "Model": "Items/Soul_Amulet/SoulAmulet.blockymodel",
+  "Texture": "Items/Soul_Amulet/Empy2.png",
+  "Icon": "Icons/ItemsGenerated/Soul_Amulet.png",
+  "Quality": "Legendary",
+  "ItemEntity": {
+    "ParticleColor": "#752250",
+    "ShowItemParticles": true,
+    "PickupRadius": 1.75
+  },
+  "ItemSoundSetId": "ISS_Items_Gems",
+  "Categories": [
+    "Items.Tools"
+  ],
+  "DropOnDeath": true,
+  "Scale": 1.2
+}

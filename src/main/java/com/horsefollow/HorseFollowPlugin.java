@@ -26,31 +26,27 @@ public final class HorseFollowPlugin extends JavaPlugin {
     private final FollowService service;
     private final ItemConsume itemConsume;
     private Timer timer;
-    
-    // Instância estática para acesso do comando
-    private static HorseFollowPlugin instance;
 
     public HorseFollowPlugin(@Nonnull JavaPluginInit init) {
         super(init);
-        instance = this;
         Path dataDirectory = getDataDirectory();
         ensureDataPackManifest(dataDirectory);
         this.service = new FollowService(dataDirectory);
         this.itemConsume = new ItemConsume(service, this);
     }
-    
+
     /**
-     * Retorna a instância do plugin (para acesso do comando).
-     */
-    public static HorseFollowPlugin getInstance() {
-        return instance;
-    }
-    
-    /**
-     * Retorna o ItemConsume (para acesso do comando).
+     * Retorna o ItemConsume (para acesso dos filtros de packet).
      */
     public ItemConsume getItemConsume() {
         return itemConsume;
+    }
+
+    /**
+     * Retorna o FollowService (para bind de montarias spawnadas, ex.: cavalo esqueleto do amuleto).
+     */
+    public FollowService getFollowService() {
+        return service;
     }
 
     /**
@@ -72,6 +68,12 @@ public final class HorseFollowPlugin extends JavaPlugin {
         PacketAdapters.registerInbound(new FeedOnFKeyFilter(this));
         // Chifre (Horn): Use = chamar montaria vinculada + som do chifre.
         PacketAdapters.registerInbound(new HornOnUseFilter(this));
+        // Soul Amulet: só captura quando o cavalo esqueleto morreu (OnDeathSystem + filtro).
+        try {
+            getEntityStoreRegistry().registerSystem(new SoulDeathTrackerSystem());
+        } catch (Throwable ignored) { }
+        PacketAdapters.registerInbound(new SoulAmuletUseFilter(this));
+        SoulAmuletPersistence.init(getDataDirectory());
 
         // 10 ticks/s (100ms).
         timer = new Timer("HorseFollow-Tick", true);

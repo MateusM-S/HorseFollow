@@ -143,8 +143,6 @@ alwaysApply: true
 - Ícones do projeto ficam em **`src/main/resources/Common/Icons/`** (ex.: `Common/Icons/ItemsGenerated/Horn.png`, `Apple_Feed_Icon.png`, `Carrot_Feed_Icon.png`).
 - Podem ser referenciados em .ui ou JSONs quando for necessário (ex.: imagem da montaria na aba Menu, ícones de abas).
 
-## Custom UI (ConfigPage)
+## Configuração (sem UI)
 
-- **`Common/UI/Custom/Pages/ConfigPage.ui`** está na versão **simples** (só distância de teleporte + Save/Cancel) para evitar o crash “Failed to load CustomUI documents” ao entrar no jogo.
-- Uma versão com **abas** (Menu, Configuração, Sobre) faz o cliente falhar ao carregar o documento ao join; quando o Hytale aceitar .ui mais complexos, pode-se restaurar abas e usar os ícones de `Common/Icons/` nas abas e na foto da montaria.
-
+- Não há tela de configuração (Custom UI). A distância de teleporte e demais opções são alteradas via **`/horsefollow distance <valor>`** e **`/horsefollow reload`**.

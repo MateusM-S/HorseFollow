@@ -19,6 +19,7 @@ import com.hypixel.hytale.server.npc.systems.RoleChangeSystem;
 import com.hypixel.hytale.server.core.modules.entity.component.TransformComponent;
 import com.hypixel.hytale.server.core.entity.damage.DamageDataComponent;
 import com.hypixel.hytale.server.core.entity.UUIDComponent;
+import com.hypixel.hytale.server.core.modules.entity.damage.DeathComponent;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
@@ -73,6 +74,7 @@ public final class FollowService {
 
     // tuning
     private static final String FRIENDLY_SUFFIX = "_Friendly";
+    private static final String FRIENDLY_STAY_SUFFIX = "_Friendly_Stay";
     private static final double STAY_MAX_DRIFT_BLOCKS = 0.5;
     private static final double STAY_MAX_DRIFT_SQ = STAY_MAX_DRIFT_BLOCKS * STAY_MAX_DRIFT_BLOCKS;
 
@@ -124,10 +126,17 @@ public final class FollowService {
     public void bind(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
         if (playerRef == null || horseRef == null) return;
 
-        // garante 1 vinculo por player: se ja existe outro, desvincula (remove follow/role/flock do anterior)
         Ref<EntityStore> previous = bound.get(playerRef);
         if (previous != null && previous.isValid() && !previous.equals(horseRef)) {
-            unbind(playerRef);
+            Store<EntityStore> store = previous.getStore();
+            UUID previousUuid = tryReadUuid(previous);
+            if (store != null && previousUuid != null && ItemConsume.playerHasSoulInAnyAmulet(store, playerRef, previousUuid)) {
+                SoulAmuletEffects.playRecollectEffects(store, playerRef, SoulAmuletEffects.getPosition(store, previous));
+                SoulAmuletCapture.destroyEntity(store, previous);
+                unbindForRecollect(playerRef);
+            } else {
+                unbind(playerRef);
+            }
         }
 
         bound.put(playerRef, horseRef);
@@ -186,6 +195,16 @@ public final class FollowService {
                         store.tryRemoveComponent(horseRef, FlockMembership.getComponentType()));
             }
         }
+        clearBindMaps(playerRef);
+    }
+
+    /** Remove apenas dos maps, sem restore de role. Usado ao recolher cavalo no amuleto (entidade será destruída). */
+    public void unbindForRecollect(Ref<EntityStore> playerRef) {
+        if (playerRef == null) return;
+        clearBindMaps(playerRef);
+    }
+
+    private void clearBindMaps(Ref<EntityStore> playerRef) {
         stayByPlayer.remove(playerRef);
         pendingStayAnchorByPlayer.remove(playerRef);
         clearPersistedStay(playerRef);
@@ -235,21 +254,18 @@ public final class FollowService {
      */
     public void clearStay(Ref<EntityStore> playerRef) {
         if (playerRef == null) return;
+        Ref<EntityStore> horseRef = bound.get(playerRef);
         stayByPlayer.remove(playerRef);
         pendingStayAnchorByPlayer.remove(playerRef);
         clearPersistedStay(playerRef);
+        if (horseRef != null && horseRef.isValid()) {
+            Store<EntityStore> store = horseRef.getStore();
+            if (store != null) applyFriendlyRoleFromStay(store, playerRef, horseRef);
+        }
     }
 
     public boolean isBound(Ref<EntityStore> playerRef) {
         return playerRef != null && bound.containsKey(playerRef);
-    }
-
-    /**
-     * Retorna uma cópia do mapa de players vinculados para uso externo (ex: ItemConsume).
-     * Não modifica o mapa original.
-     */
-    public Map<Ref<EntityStore>, Ref<EntityStore>> getBoundPlayers() {
-        return new java.util.HashMap<>(bound);
     }
 
     public Ref<EntityStore> getBoundHorse(Ref<EntityStore> playerRef) {
@@ -261,80 +277,6 @@ public final class FollowService {
     public UUID getBoundHorseUuid(Ref<EntityStore> playerRef) {
         if (playerRef == null) return null;
         return boundUuids.get(playerRef);
-    }
-
-    /**
-     * Nome do tipo da montaria vinculada (ex.: "Horse", "Ram") para UI (ícone, stats).
-     * Retorna null se não houver vínculo ou role não identificado.
-     */
-    public String getMountTypeName(Store<EntityStore> store, Ref<EntityStore> playerRef) {
-        Ref<EntityStore> horseRef = getBoundHorse(playerRef);
-        if (store == null || playerRef == null || horseRef == null || !horseRef.isValid()) return null;
-        return resolveBaseRoleName(store, playerRef, horseRef);
-    }
-
-    /**
-     * Stats de exibição da montaria (MaxHealth, MaxSpeed do role; current Health/Stamina se disponível).
-     * Valores do JSON: Horse_Friendly 124 HP, 10 speed; Ram_Friendly 124 HP, 8 speed.
-     */
-    public MountDisplayStats getMountDisplayStats(Store<EntityStore> store, Ref<EntityStore> playerRef) {
-        Ref<EntityStore> horseRef = getBoundHorse(playerRef);
-        if (store == null || playerRef == null || horseRef == null || !horseRef.isValid()) {
-            return new MountDisplayStats(124, 124, 10, 124, 124);
-        }
-        String type = resolveBaseRoleName(store, playerRef, horseRef);
-        int maxHealth = 124;
-        int maxSpeed = "Ram".equals(type) ? 8 : 10;
-        int maxStamina = 124;
-        int currentHealth = maxHealth;
-        int currentStamina = maxStamina;
-        try {
-            Object statMap = tryGetEntityStatMap(store, horseRef);
-            if (statMap != null) {
-                Double health = tryGetStatValue(statMap, "Health");
-                if (health != null) currentHealth = (int) Math.max(0, Math.round(health));
-                Double stamina = tryGetStatValue(statMap, "Stamina");
-                if (stamina != null) currentStamina = (int) Math.max(0, Math.round(stamina));
-            }
-        } catch (Throwable ignored) {}
-        return new MountDisplayStats(maxHealth, maxStamina, maxSpeed, currentHealth, currentStamina);
-    }
-
-    /** DTO para exibir vida/estamina/velocidade da montaria na UI. */
-    public static final class MountDisplayStats {
-        public final int maxHealth;
-        public final int maxStamina;
-        public final int maxSpeed;
-        public final int currentHealth;
-        public final int currentStamina;
-
-        public MountDisplayStats(int maxHealth, int maxStamina, int maxSpeed, int currentHealth, int currentStamina) {
-            this.maxHealth = maxHealth;
-            this.maxStamina = maxStamina;
-            this.maxSpeed = maxSpeed;
-            this.currentHealth = currentHealth;
-            this.currentStamina = currentStamina;
-        }
-    }
-
-    private static Object tryGetEntityStatMap(Store<EntityStore> store, Ref<EntityStore> entityRef) {
-        try {
-            Class<?> c = Class.forName("com.hypixel.hytale.server.core.modules.entitystats.EntityStatMap");
-            java.lang.reflect.Method getType = c.getMethod("getComponentType");
-            Object type = getType.invoke(null);
-            return store.getComponent(entityRef, (com.hypixel.hytale.component.ComponentType) type);
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    private static Double tryGetStatValue(Object entityStatMap, String statId) {
-        if (entityStatMap == null || statId == null) return null;
-        try {
-            java.lang.reflect.Method getValue = entityStatMap.getClass().getMethod("getValue", Object.class);
-            Object val = getValue.invoke(entityStatMap, statId);
-            if (val instanceof Number) return ((Number) val).doubleValue();
-        } catch (Throwable ignored) {}
-        return null;
     }
 
     public FollowConfig getConfig() {
@@ -556,10 +498,38 @@ public final class FollowService {
 
         String name = NPCPlugin.get().getName(roleIndex);
         if (name == null || name.isBlank()) return null;
+        if (name.endsWith(FRIENDLY_STAY_SUFFIX)) {
+            return name.substring(0, name.length() - FRIENDLY_STAY_SUFFIX.length());
+        }
         if (name.endsWith(FRIENDLY_SUFFIX)) {
             return name.substring(0, name.length() - FRIENDLY_SUFFIX.length());
         }
         return name;
+    }
+
+    /** Role Stay (HF_ regras: Laydown ao entrar em Sleep). Usado ao aplicar /horsefollow stay. */
+    private String resolveStayRoleId(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        String base = resolveBaseRoleName(store, playerRef, horseRef);
+        if (base == null) return null;
+        String candidate = base + FRIENDLY_STAY_SUFFIX;
+        return NPCPlugin.get().getIndex(candidate) >= 0 ? candidate : null;
+    }
+
+    /** Aplica o role Stay e força estado Idle; applyRoleChange já seta Idle. A instrução StayIdleGoToSleep faz Idle→Sleep e o motor executa Laydown. */
+    private void applyStayRole(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        String stayId = resolveStayRoleId(store, playerRef, horseRef);
+        if (stayId == null) return;
+        int stayIndex = NPCPlugin.get().getIndex(stayId);
+        if (stayIndex < 0) return;
+        applyRoleChange(store, playerRef, horseRef, stayIndex, false);
+    }
+
+    /** Restaura o role Friendly (regras do mundo) e força Idle. Usado ao sair do stay. */
+    private void applyFriendlyRoleFromStay(Store<EntityStore> store, Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
+        String friendlyId = resolveFriendlyRoleId(store, playerRef, horseRef);
+        if (friendlyId == null) return;
+        if (!applyRoleChange(store, playerRef, horseRef, friendlyId, false)) return;
+        forceNpcIdleState(store, horseRef);
     }
 
     private void applyOriginalRole(Ref<EntityStore> playerRef, Ref<EntityStore> horseRef) {
@@ -580,26 +550,6 @@ public final class FollowService {
             if (targetIndex < 0) return;
             applyRoleChange(store, playerRef, horseRef, targetIndex, false);
         });
-    }
-
-    /**
-     * Roda um runnable na thread do world do store associado ao ref.
-     * (Uso: comandos e qualquer acesso a componentes/ecs)
-     */
-    public static void runOnWorld(Ref<EntityStore> anyRef, Runnable r) {
-        if (anyRef == null || r == null) return;
-        try {
-            Store<EntityStore> store = anyRef.getStore();
-            if (store == null) {
-                r.run();
-                return;
-            }
-            EntityStore entityStore = store.getExternalData();
-            worldExecute(entityStore, r);
-        } catch (Throwable t) {
-            // fallback
-            r.run();
-        }
     }
 
     public void tick() {
@@ -665,6 +615,7 @@ public final class FollowService {
                                 stayByPlayer.remove(playerRef);
                                 pendingStayAnchorByPlayer.remove(playerRef);
                                 clearPersistedStay(playerRef);
+                                applyFriendlyRoleFromStay(store, playerRef, horseRef);
                                 // continua fluxo normal
                                 stay = null;
                             }
@@ -678,6 +629,7 @@ public final class FollowService {
                             stayByPlayer.remove(playerRef);
                             pendingStayAnchorByPlayer.remove(playerRef);
                             clearPersistedStay(playerRef);
+                            applyFriendlyRoleFromStay(store, playerRef, horseRef);
                             store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
                             return;
                         }
@@ -695,13 +647,13 @@ public final class FollowService {
                         if (lastDamage != null && stay.lastDamageTimeAtSet != null && lastDamage.isAfter(stay.lastDamageTimeAtSet)) {
                             stayByPlayer.remove(playerRef);
                             clearPersistedStay(playerRef);
-                            forceNpcIdleState(store, horseRef);
+                            applyFriendlyRoleFromStay(store, playerRef, horseRef);
                             // continua fluxo normal (follow/teleporte) neste tick
                         } else if (lastDamage != null && stay.lastDamageTimeAtSet == null) {
                             // se não tínhamos snapshot e agora tem, considera que houve "atividade" e libera
                             stayByPlayer.remove(playerRef);
                             clearPersistedStay(playerRef);
-                            forceNpcIdleState(store, horseRef);
+                            applyFriendlyRoleFromStay(store, playerRef, horseRef);
                         } else {
                             // mantém parado: remove flock-follow e teleporta de volta se driftar
                             store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
@@ -792,7 +744,7 @@ public final class FollowService {
         stayByPlayer.remove(playerRef);
         pendingStayAnchorByPlayer.remove(playerRef);
         clearPersistedStay(playerRef);
-        forceNpcIdleState(store, horseRef);
+        applyFriendlyRoleFromStay(store, playerRef, horseRef);
         TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
         TransformComponent horseTf = store.getComponent(horseRef, TransformComponent.getComponentType());
         if (playerTf == null || horseTf == null) return false;
@@ -894,6 +846,8 @@ public final class FollowService {
 
         // desliga follow
         store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+        // regras HF_: role Stay + estado Sleep (animação deitado)
+        applyStayRole(store, playerRef, horseRef);
         return true;
     }
 
@@ -912,6 +866,8 @@ public final class FollowService {
             horseTf.teleportPosition(fixed);
         }
         store.tryRemoveComponent(horseRef, FlockMembership.getComponentType());
+        // regras HF_: role Stay + estado Sleep (animação deitado)
+        applyStayRole(store, playerRef, horseRef);
         return true;
     }
 
@@ -1141,6 +1097,121 @@ public final class FollowService {
             }
         });
         return closest.get();
+    }
+
+    /**
+     * Encontra o NPC do grupo Capture_Soul (Horse_Skeleton, Horse_Skeleton_Armored) mais próximo do jogador.
+     * Usado pelo Soul Amulet para captura de alma só em cadáveres.
+     */
+    public static Ref<EntityStore> findClosestCaptureSoulInRange(Store<EntityStore> store, Ref<EntityStore> playerRef, double range) {
+        if (store == null || playerRef == null || range <= 0) return null;
+        TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
+        if (playerTf == null) return null;
+        Vector3d playerPos = playerTf.getPosition();
+        if (playerPos == null) return null;
+        int idx1 = NPCPlugin.get().getIndex("Horse_Skeleton");
+        int idx2 = NPCPlugin.get().getIndex("Horse_Skeleton_Armored");
+        if (idx1 < 0 && idx2 < 0) return null;
+        double rangeSq = range * range;
+        AtomicReference<Ref<EntityStore>> closest = new AtomicReference<>();
+        AtomicReference<Double> closestDistSq = new AtomicReference<>(Double.MAX_VALUE);
+        Archetype<EntityStore> query = Archetype.of(NPCEntity.getComponentType());
+        store.forEachChunk(query, (ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> cb) -> {
+            int size = chunk.size();
+            for (int i = 0; i < size; i++) {
+                Ref<EntityStore> ref = chunk.getReferenceTo(i);
+                if (ref == null || ref.equals(playerRef) || !ref.isValid()) continue;
+                NPCEntity npc = chunk.getComponent(i, NPCEntity.getComponentType());
+                if (npc == null) continue;
+                int roleIndex = npc.getRoleIndex();
+                if (roleIndex != idx1 && roleIndex != idx2) continue;
+                TransformComponent tf = store.getComponent(ref, TransformComponent.getComponentType());
+                if (tf == null) continue;
+                Vector3d pos = tf.getPosition();
+                if (pos == null) continue;
+                double dx = pos.getX() - playerPos.getX();
+                double dy = pos.getY() - playerPos.getY();
+                double dz = pos.getZ() - playerPos.getZ();
+                double distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq <= rangeSq && distSq < closestDistSq.get()) {
+                    closestDistSq.set(distSq);
+                    closest.set(ref);
+                }
+            }
+        });
+        return closest.get();
+    }
+
+    /**
+     * Encontra a entidade morta (DeathComponent) cujo UUID está no conjunto, mais próxima do jogador dentro do alcance.
+     * Critério único do Soul Amulet: DeathSystems registrou o UUID; uso Primary em alcance → esta busca.
+     */
+    public static Ref<EntityStore> findDeadEntityWithUuidInRange(Store<EntityStore> store, Ref<EntityStore> playerRef,
+                                                                  double range, java.util.Set<java.util.UUID> uuids) {
+        if (store == null || playerRef == null || range <= 0 || uuids == null || uuids.isEmpty()) return null;
+        TransformComponent playerTf = store.getComponent(playerRef, TransformComponent.getComponentType());
+        if (playerTf == null) return null;
+        Vector3d playerPos = playerTf.getPosition();
+        if (playerPos == null) return null;
+        double rangeSq = range * range;
+        AtomicReference<Ref<EntityStore>> closest = new AtomicReference<>();
+        AtomicReference<Double> closestDistSq = new AtomicReference<>(Double.MAX_VALUE);
+        Archetype<EntityStore> query = Archetype.of(UUIDComponent.getComponentType(), DeathComponent.getComponentType());
+        store.forEachChunk(query, (ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> cb) -> {
+            int size = chunk.size();
+            for (int i = 0; i < size; i++) {
+                Ref<EntityStore> ref = chunk.getReferenceTo(i);
+                if (ref == null || ref.equals(playerRef) || !ref.isValid()) continue;
+                UUIDComponent uuidComp = chunk.getComponent(i, UUIDComponent.getComponentType());
+                if (uuidComp == null || !uuids.contains(uuidComp.getUuid())) continue;
+                TransformComponent tf = store.getComponent(ref, TransformComponent.getComponentType());
+                if (tf == null) continue;
+                Vector3d pos = tf.getPosition();
+                if (pos == null) continue;
+                double dx = pos.getX() - playerPos.getX();
+                double dy = pos.getY() - playerPos.getY();
+                double dz = pos.getZ() - playerPos.getZ();
+                double distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq <= rangeSq && distSq < closestDistSq.get()) {
+                    closestDistSq.set(distSq);
+                    closest.set(ref);
+                }
+            }
+        });
+        return closest.get();
+    }
+
+    /**
+     * Encontra uma entidade (viva ou morta) com o UUID dado.
+     */
+    public static Ref<EntityStore> findEntityByUuid(Store<EntityStore> store, UUID uuid) {
+        if (store == null || uuid == null) return null;
+        AtomicReference<Ref<EntityStore>> found = new AtomicReference<>();
+        Archetype<EntityStore> query = Archetype.of(UUIDComponent.getComponentType());
+        store.forEachChunk(query, (ArchetypeChunk<EntityStore> chunk, CommandBuffer<EntityStore> cb) -> {
+            if (found.get() != null) return;
+            int size = chunk.size();
+            for (int i = 0; i < size; i++) {
+                UUIDComponent uuidComp = chunk.getComponent(i, UUIDComponent.getComponentType());
+                if (uuidComp != null && uuid.equals(uuidComp.getUuid())) {
+                    found.set(chunk.getReferenceTo(i));
+                    return;
+                }
+            }
+        });
+        return found.get();
+    }
+
+    /**
+     * Encontra uma entidade VIVA (sem DeathComponent) com o UUID dado.
+     * Usado pelo Soul Amulet: se o cavalo morreu (cadáver), não conta — pode spawnar de novo.
+     */
+    public static Ref<EntityStore> findLivingEntityByUuid(Store<EntityStore> store, UUID uuid) {
+        if (store == null || uuid == null) return null;
+        Ref<EntityStore> ref = findEntityByUuid(store, uuid);
+        if (ref == null || !ref.isValid()) return null;
+        if (store.getComponent(ref, DeathComponent.getComponentType()) != null) return null;
+        return ref;
     }
 
     private static Ref<EntityStore> resolveHorseFromPlayer(Store<EntityStore> store, Ref<EntityStore> playerRef) {

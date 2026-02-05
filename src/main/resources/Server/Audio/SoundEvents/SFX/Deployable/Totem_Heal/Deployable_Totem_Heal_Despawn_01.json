@@ -1,0 +1,11 @@
+{
+  "Layers": [
+    {
+      "Looping": false,
+      "Files": [
+        "Sounds/SoulAmulet/Deployable_Totem_Heal_Despawn_01.ogg"
+      ]
+    }
+  ],
+  "Volume": 1.0
+}

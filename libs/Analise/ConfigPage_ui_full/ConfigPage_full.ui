@@ -1,0 +1,290 @@
+@PrimaryButtonStyle = TextButtonStyle(
+  Default: (Background: #3a7bd5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #4a8be5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #2a6bc5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@SecondaryButtonStyle = TextButtonStyle(
+  Default: (Background: #2b3542, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #3b4552, LabelStyle: (FontSize: 14, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #1b2532, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@ToggleSelectedStyle = TextButtonStyle(
+  Default: (Background: #3a7bd5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #4a8be5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #2a6bc5, LabelStyle: (FontSize: 14, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+@ToggleNeutralStyle = TextButtonStyle(
+  Default: (Background: #2b3542, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Hovered: (Background: #3b4552, LabelStyle: (FontSize: 14, TextColor: #b6c9de, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center)),
+  Pressed: (Background: #1b2532, LabelStyle: (FontSize: 14, TextColor: #96a9be, RenderBold: true, HorizontalAlignment: Center, VerticalAlignment: Center))
+);
+
+Group {
+  Anchor: (Width: 720, Height: 520);
+  Background: #141c26(0.98);
+  LayoutMode: Left;
+  Padding: (Full: 0);
+
+  Group #NavColumn {
+    Anchor: (Width: 72, Height: 520);
+    LayoutMode: Top;
+    Background: #0a1119;
+    Padding: (Full: 8);
+
+    Group #TabMenu {
+      Anchor: (Width: 56, Height: 56);
+      LayoutMode: Center;
+      Background: (TexturePath: "Icons/Menu.png");
+    }
+    Group { Anchor: (Height: 8); }
+    Group #TabConfig {
+      Anchor: (Width: 56, Height: 56);
+      LayoutMode: Center;
+      Background: (TexturePath: "Icons/Config.png");
+    }
+    Group { Anchor: (Height: 8); }
+    Group #TabAbout {
+      Anchor: (Width: 56, Height: 56);
+      LayoutMode: Center;
+      Background: (TexturePath: "Icons/About.png");
+    }
+    Group { FlexWeight: 1; }
+  }
+
+  Group #ContentColumn {
+    Anchor: (Width: 648, Height: 520);
+    LayoutMode: Top;
+    Padding: (Full: 16);
+
+    Label {
+      Text: "HORSE FOLLOW";
+      Anchor: (Height: 28);
+      Style: (FontSize: 18, TextColor: #ffffff, HorizontalAlignment: Center, RenderBold: true);
+    }
+    Group { Anchor: (Height: 8); }
+    Group { Anchor: (Height: 1); Background: #2b3542; }
+    Group { Anchor: (Height: 12); }
+
+    Group #MenuPanel {
+      Anchor: (Width: 616, Height: 420);
+      LayoutMode: Top;
+      Visible: true;
+
+      Label {
+        Text: "Sua montaria";
+        Anchor: (Height: 26);
+        Style: (FontSize: 20, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center);
+      }
+      Group { Anchor: (Height: 10); }
+
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 200);
+        Padding: (Full: 6);
+
+        Group #MountImage {
+          Anchor: (Width: 160, Height: 160);
+          LayoutMode: Center;
+          Background: (TexturePath: "Icons/Horse.png");
+        }
+
+        Group {
+          Anchor: (Width: 420, Height: 200);
+          LayoutMode: Top;
+          Padding: (Full: 6);
+
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 40);
+            TextField #MountName {
+              Anchor: (Width: 340, Height: 36);
+              Padding: (Horizontal: 8);
+              Background: #0a1119;
+              PlaceholderText: "Nomeie sua montaria";
+            }
+            Group { Anchor: (Width: 8); }
+            Group #ResetName {
+              Anchor: (Width: 40, Height: 40);
+              LayoutMode: Center;
+              Background: (TexturePath: "Icons/Reset.png");
+            }
+          }
+          Group { Anchor: (Height: 14); }
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 26);
+            Group {
+              Anchor: (Width: 26, Height: 26);
+              LayoutMode: Center;
+              Background: (TexturePath: "Icons/Health.png");
+            }
+            Group { Anchor: (Width: 8); }
+            Group #LifeBarTrack {
+              Anchor: (Width: 320, Height: 22);
+              LayoutMode: Left;
+              Background: #2b3542;
+              Group #LifeBarFill {
+                Anchor: (Width: 0, Height: 22);
+                Background: #add555;
+              }
+            }
+          }
+          Group { Anchor: (Height: 8); }
+          Group {
+            LayoutMode: Left;
+            Anchor: (Height: 26);
+            Group {
+              Anchor: (Width: 26, Height: 26);
+              LayoutMode: Center;
+              Background: (TexturePath: "Icons/Stamina.png");
+            }
+            Group { Anchor: (Width: 8); }
+            Group #StaminaBarTrack {
+              Anchor: (Width: 320, Height: 22);
+              LayoutMode: Left;
+              Background: #2b3542;
+              Group #StaminaBarFill {
+                Anchor: (Width: 0, Height: 22);
+                Background: #f5a834;
+              }
+            }
+          }
+          Group { Anchor: (Height: 12); }
+          Label #VelocityText {
+            Text: "Velocidade: 0 blocos/s";
+            Anchor: (Height: 22);
+            Style: (FontSize: 15, TextColor: #f3a634, VerticalAlignment: Center);
+          }
+        }
+      }
+      Group { FlexWeight: 1; }
+      Group {
+        LayoutMode: Right;
+        Anchor: (Height: 48);
+        Padding: (Bottom: 8);
+        TextButton #SairMenu {
+          Text: "SAIR";
+          Anchor: (Width: 140, Height: 44);
+          Style: @SecondaryButtonStyle;
+        }
+      }
+    }
+
+    Group #ConfigPanel {
+      Anchor: (Width: 616, Height: 420);
+      LayoutMode: Top;
+      Visible: false;
+
+      Label {
+        Text: "Configurações";
+        Anchor: (Height: 26);
+        Style: (FontSize: 20, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center);
+      }
+      Group { Anchor: (Height: 14); }
+
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 44);
+        Label {
+          Text: "Distância do teleporte automático (blocos):";
+          Anchor: (Width: 380);
+          Style: (FontSize: 15, TextColor: #96a9be, VerticalAlignment: Center, HorizontalAlignment: Right);
+        }
+        Group { Anchor: (Width: 12); }
+        TextField #DistanceInput {
+          Anchor: (Width: 140, Height: 36);
+          Padding: (Horizontal: 8);
+          Background: #0a1119;
+          PlaceholderText: "100";
+        }
+      }
+      Group { Anchor: (Height: 12); }
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 44);
+        Label {
+          Text: "Desativar teleporte automático:";
+          Anchor: (Width: 380);
+          Style: (FontSize: 15, TextColor: #96a9be, VerticalAlignment: Center, HorizontalAlignment: Right);
+        }
+        Group { Anchor: (Width: 12); }
+        TextButton #DisableTeleportBtn {
+          Text: "NÃO";
+          Anchor: (Width: 80, Height: 36);
+          Style: @ToggleNeutralStyle;
+        }
+      }
+      Group { Anchor: (Height: 12); }
+      Group {
+        LayoutMode: Left;
+        Anchor: (Height: 44);
+        Label {
+          Text: "Desativar acompanhamento da montaria?";
+          Anchor: (Width: 380);
+          Style: (FontSize: 15, TextColor: #96a9be, VerticalAlignment: Center, HorizontalAlignment: Right);
+        }
+        Group { Anchor: (Width: 12); }
+        TextButton #DisableFollowBtn {
+          Text: "NÃO";
+          Anchor: (Width: 80, Height: 36);
+          Style: @ToggleNeutralStyle;
+        }
+      }
+      Group { FlexWeight: 1; }
+      Group {
+        LayoutMode: Right;
+        Anchor: (Height: 48);
+        Padding: (Bottom: 8);
+        TextButton #SaveButton {
+          Text: "SALVAR";
+          Anchor: (Width: 160, Height: 44);
+          Style: @PrimaryButtonStyle;
+        }
+        Group { Anchor: (Width: 16); }
+        TextButton #SairConfig {
+          Text: "SAIR";
+          Anchor: (Width: 140, Height: 44);
+          Style: @SecondaryButtonStyle;
+        }
+      }
+    }
+
+    Group #AboutPanel {
+      Anchor: (Width: 616, Height: 420);
+      LayoutMode: Top;
+      Visible: false;
+
+      Label {
+        Text: "Sobre o HorseFollow";
+        Anchor: (Height: 26);
+        Style: (FontSize: 20, TextColor: #ffffff, RenderBold: true, HorizontalAlignment: Center);
+      }
+      Group { Anchor: (Height: 14); }
+      Group {
+        Anchor: (Width: 584, Height: 280);
+        LayoutMode: Top;
+        Padding: (Full: 12);
+        Background: #0a1119(0.5);
+        Label #AboutText {
+          Text: "This plugin creates a persistent bond between the player and a mount. Supports horses and rams. Binding is done using feed items (Horse Feed / Ram Feed). Once bound, the mount actively follows its owner. Follow distance and teleport behavior are configurable; automatic teleport can be fully disabled.";
+          Anchor: (Width: 560);
+          Style: (FontSize: 15, TextColor: #cccccc);
+        }
+      }
+      Group { FlexWeight: 1; }
+      Group {
+        LayoutMode: Right;
+        Anchor: (Height: 48);
+        Padding: (Bottom: 8);
+        TextButton #SairAbout {
+          Text: "SAIR";
+          Anchor: (Width: 140, Height: 44);
+          Style: @SecondaryButtonStyle;
+        }
+      }
+    }
+  }
+}

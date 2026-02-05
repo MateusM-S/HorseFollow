@@ -134,6 +134,14 @@
       ],
       "Description": "The duration range of daytime naps, in seconds."
     },
+    "SleepInstruction": {
+      "Value": "Component_Instruction_Wild_Sleep_State",
+      "Description": "Instruction component for Sleep state (wake on time/damage/sound). Stay role overrides to HF_Component_Instruction_Stay_Sleep_State to disable time-based wake."
+    },
+    "StayIdleGoToSleep": {
+      "Value": false,
+      "Description": "HorseFollow stay: when true, in Idle state immediately transition to Sleep (so Laydown runs). Stay role sets true."
+    },
     "DayFlavorAnimation": {
       "Value": "",
       "Description": "The flavor animation to play during the day. Ignored if null or empty."
@@ -725,6 +733,22 @@
             "Compute": "true"
           },
           "Instructions": [
+            {
+              "$Comment": "HorseFollow stay: when StayIdleGoToSleep true, transition Idle -> Sleep so StateTransitions run Laydown.",
+              "Enabled": {
+                "Compute": "StayIdleGoToSleep"
+              },
+              "Sensor": {
+                "Type": "Any",
+                "Once": true
+              },
+              "Actions": [
+                {
+                  "Type": "State",
+                  "State": "Sleep"
+                }
+              ]
+            },
             {
               "$Comment": "Switch to flee state if any flock member engages a target TODO switch to attack if you are very close and can attack? otherwise flee.",
               "Enabled": {
@@ -1345,7 +1369,7 @@
               ]
             },
             {
-              "$Comment": "Night-time sleep.",
+              "$Comment": "Night-time sleep. Uses static reference (vanilla pattern). Stay role would need separate approach for HF_Component_Instruction_Stay_Sleep_State.",
               "Instructions": [
                 {
                   "Reference": "Component_Instruction_Wild_Sleep_State",

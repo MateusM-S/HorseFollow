@@ -12,6 +12,10 @@ import com.hypixel.hytale.server.core.inventory.Inventory;
 import com.hypixel.hytale.server.core.inventory.ItemStack;
 import com.hypixel.hytale.server.core.inventory.container.ItemContainer;
 
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonString;
+
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
@@ -57,10 +61,6 @@ public final class ItemConsume {
     private static final long HORN_SOUND_DELAY_MS = 750L;
 
     private final HorseFollowPlugin plugin;
-
-    public ItemConsume(FollowService followService) {
-        this(followService, null);
-    }
 
     public ItemConsume(FollowService followService, HorseFollowPlugin plugin) {
         this.followService = followService;
@@ -189,9 +189,7 @@ public final class ItemConsume {
             } else {
                 lastRamFeedQuantity.remove(playerRef);
             }
-        } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao verificar consumo: " + t.getClass().getSimpleName() + " - " + t.getMessage());
-        }
+        } catch (Throwable t) { }
     }
 
     /**
@@ -448,8 +446,157 @@ public final class ItemConsume {
             inventory.markChanged();
             return true;
         } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao consumir 1 item (F): " + t.getMessage());
             return false;
+        }
+    }
+
+    private static final String SOUL_AMULET_ITEM_ID = "Soul_Amulet";
+    private static final String SOUL_AMULET_FULL_ITEM_ID = "Soul_Amulet_Full";
+    private static final String METADATA_SOUL_UUID = "soulUuid";
+    private static final String METADATA_ROLE_INDEX = "roleIndex";
+
+    /**
+     * Substitui Soul_Amulet (vazio) na mão por Soul_Amulet_Full com alma no metadata do item (1 cavalo por amuleto).
+     */
+    public boolean replaceHeldWithFilledSoulAmulet(Store<EntityStore> store, Ref<EntityStore> playerRef,
+                                                   java.util.UUID npcUuid, int roleIndex) {
+        if (store == null || playerRef == null) return false;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return false;
+        Inventory inventory = getPlayerInventory(store, playerRef, player);
+        if (inventory == null) return false;
+        try {
+            ItemStack inHand = inventory.getItemInHand();
+            if (inHand == null || inHand.isEmpty() || !SOUL_AMULET_ITEM_ID.equals(inHand.getItemId())) {
+                return false;
+            }
+            BsonDocument meta = new BsonDocument()
+                    .append(METADATA_SOUL_UUID, new BsonString(npcUuid.toString()))
+                    .append(METADATA_ROLE_INDEX, new BsonInt32(roleIndex));
+            ItemStack filled = new ItemStack(SOUL_AMULET_FULL_ITEM_ID, 1, meta);
+            ItemContainer hotbar = inventory.getHotbar();
+            if (hotbar == null) return false;
+            short slot = (short) (inventory.getActiveHotbarSlot() & 0xFF);
+            hotbar.setItemStackForSlot(slot, filled);
+            inventory.markChanged();
+            SoulAmuletPersistence.save(player.getUuid(), npcUuid, roleIndex);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Retorna true se o jogador está com Soul_Amulet ou Soul_Amulet_Full na mão.
+     */
+    public static boolean isHoldingSoulAmulet(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null) return false;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return false;
+        Inventory inventory = getPlayerInventoryStatic(store, playerRef, player);
+        if (inventory == null) return false;
+        try {
+            ItemStack inHand = inventory.getItemInHand();
+            if (inHand == null || inHand.isEmpty()) return false;
+            String id = inHand.getItemId();
+            return SOUL_AMULET_ITEM_ID.equals(id) || SOUL_AMULET_FULL_ITEM_ID.equals(id);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Obtém UUID e roleIndex do amuleto cheio na mão. Prioriza metadata do item (1 alma por amuleto); fallback souls.txt.
+     */
+    public static SoulAmuletData getHeldSoulAmuletData(Store<EntityStore> store, Ref<EntityStore> playerRef) {
+        if (store == null || playerRef == null) return null;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return null;
+        Inventory inventory = getPlayerInventoryStatic(store, playerRef, player);
+        if (inventory == null) return null;
+        try {
+            ItemStack inHand = inventory.getItemInHand();
+            if (inHand == null || inHand.isEmpty()) return null;
+            if (!SOUL_AMULET_FULL_ITEM_ID.equals(inHand.getItemId())) return null;
+            BsonDocument meta = inHand.getMetadata();
+            if (meta != null && meta.containsKey(METADATA_SOUL_UUID) && meta.containsKey(METADATA_ROLE_INDEX)) {
+                try {
+                    String uuidStr = meta.getString(METADATA_SOUL_UUID).getValue();
+                    int role = meta.getInt32(METADATA_ROLE_INDEX).getValue();
+                    return new SoulAmuletData(java.util.UUID.fromString(uuidStr), role);
+                } catch (Exception ignored) {}
+            }
+            return SoulAmuletPersistence.load(player.getUuid());
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Retorna true se o jogador tem algum Soul_Amulet_Full (em qualquer slot) com esta alma.
+     */
+    public static boolean playerHasSoulInAnyAmulet(Store<EntityStore> store, Ref<EntityStore> playerRef, java.util.UUID soulUuid) {
+        if (store == null || playerRef == null || soulUuid == null) return false;
+        PlayerRef player = store.getComponent(playerRef, PlayerRef.getComponentType());
+        if (player == null) return false;
+        Inventory inventory = getPlayerInventoryStatic(store, playerRef, player);
+        if (inventory == null) return false;
+        try {
+            ItemContainer hotbar = inventory.getHotbar();
+            if (hotbar == null) return false;
+            int slots = hotbar.getCapacity();
+            for (int i = 0; i < slots; i++) {
+                ItemStack stack = hotbar.getItemStack((short) i);
+                if (stack == null || stack.isEmpty()) continue;
+                if (!SOUL_AMULET_FULL_ITEM_ID.equals(stack.getItemId())) continue;
+                BsonDocument meta = stack.getMetadata();
+                if (meta != null && meta.containsKey(METADATA_SOUL_UUID)) {
+                    try {
+                        String uuidStr = meta.getString(METADATA_SOUL_UUID).getValue();
+                        if (soulUuid.equals(java.util.UUID.fromString(uuidStr))) return true;
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static Inventory getPlayerInventoryStatic(Store<EntityStore> store, Ref<EntityStore> playerRef, PlayerRef player) {
+        try {
+            Class<?> playerComponentClass = Class.forName("com.hypixel.hytale.server.core.entity.entities.Player");
+            Method getComponentType = playerComponentClass.getMethod("getComponentType");
+            Object playerComponentType = getComponentType.invoke(null);
+            Method getComponent = store.getClass().getMethod("getComponent", Ref.class, playerComponentType.getClass());
+            Object playerComponent = getComponent.invoke(store, playerRef, playerComponentType);
+            if (playerComponent != null) {
+                Method getInventory = playerComponentClass.getMethod("getInventory");
+                Inventory inv = (Inventory) getInventory.invoke(playerComponent);
+                if (inv != null) return inv;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            Method getInventory = player.getClass().getMethod("getInventory");
+            Inventory inv = (Inventory) getInventory.invoke(player);
+            if (inv != null) return inv;
+        } catch (Throwable ignored) {}
+        for (String methodName : new String[]{"getPlayerInventory", "inventory", "getItemInventory"}) {
+            try {
+                Method m = player.getClass().getMethod(methodName);
+                Object result = m.invoke(player);
+                if (result instanceof Inventory) return (Inventory) result;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    /** Dados do amuleto cheio: UUID da alma e roleIndex (para escolher Horse_Skeleton_Friendly vs Armored). */
+    public static final class SoulAmuletData {
+        public final java.util.UUID soulUuid;
+        public final int roleIndex;
+
+        public SoulAmuletData(java.util.UUID soulUuid, int roleIndex) {
+            this.soulUuid = soulUuid;
+            this.roleIndex = roleIndex;
         }
     }
 
@@ -471,7 +618,7 @@ public final class ItemConsume {
     }
 
     /** Volume do som do chifre (1.0 = padrão). */
-    private static final float HORN_SOUND_VOLUME = 1.0f;
+    private static final float HORN_SOUND_VOLUME = 0.75f;
 
     /** IDs do SoundEvent do chifre (mod). */
     private static final String[] HORN_SOUND_IDS = {
@@ -479,8 +626,6 @@ public final class ItemConsume {
         "Horn_Sound",
         "SFX_Horn_Use"
     };
-
-    private static volatile boolean hornSoundFailureLogged = false;
 
     /**
      * Retorna o item ID do slot ativo da barra de utilitários, ou null.
@@ -562,23 +707,12 @@ public final class ItemConsume {
         if (store == null || playerRef == null || !playerRef.isValid()) return;
         try {
             Integer index = getHornSoundEventIndex();
-            if (index == null || index < 0) {
-                if (!hornSoundFailureLogged) {
-                    hornSoundFailureLogged = true;
-                    System.out.println("[HorseFollow] ItemConsume: Som do chifre não tocado — índice do SoundEvent não encontrado.");
-                }
-                return;
-            }
+            if (index == null || index < 0) return;
             TransformComponent transform = store.getComponent(playerRef, TransformComponent.getComponentType());
             if (transform == null) return;
             var pos = transform.getPosition();
             SoundUtil.playSoundEvent3dToPlayer(playerRef, index.intValue(), SoundCategory.SFX, pos.getX(), pos.getY(), pos.getZ(), HORN_SOUND_VOLUME, 1.0f, store);
-        } catch (Throwable t) {
-            if (!hornSoundFailureLogged) {
-                hornSoundFailureLogged = true;
-                System.out.println("[HorseFollow] ItemConsume: Erro ao tocar som do chifre: " + t.getMessage());
-            }
-        }
+        } catch (Throwable t) { }
     }
 
     private static Integer getHornSoundEventIndex() {
@@ -599,9 +733,6 @@ public final class ItemConsume {
         "SFX_Items_Consume_Bread_Stereo_01"
     };
 
-    /** Log de falha do som apenas uma vez por sessão para não poluir o log. */
-    private static volatile boolean soundFailureLogged = false;
-
     /**
      * Toca o som de consumo (pão/feed) na posição do jogador, após feed com sucesso.
      * Usa SoundUtil.playSoundEvent3dToPlayer (API Hytale). Índice obtido por reflexão.
@@ -610,30 +741,12 @@ public final class ItemConsume {
         if (store == null || playerRef == null || !playerRef.isValid()) return;
         try {
             Integer index = getSoundEventIndex();
-            if (index == null || index < 0) {
-                if (!soundFailureLogged) {
-                    soundFailureLogged = true;
-                    System.out.println("[HorseFollow] ItemConsume: Som de feed não tocado — não foi possível obter índice do SoundEvent (testados: " + String.join(", ", FEED_CONSUME_SOUND_IDS) + "). Ver getSoundEventIndex no log acima.");
-                }
-                return;
-            }
+            if (index == null || index < 0) return;
             TransformComponent transform = store.getComponent(playerRef, TransformComponent.getComponentType());
-            if (transform == null) {
-                if (!soundFailureLogged) {
-                    soundFailureLogged = true;
-                    System.out.println("[HorseFollow] ItemConsume: Som de feed não tocado — TransformComponent do jogador é null.");
-                }
-                return;
-            }
+            if (transform == null) return;
             var pos = transform.getPosition();
             SoundUtil.playSoundEvent3dToPlayer(playerRef, index.intValue(), SoundCategory.SFX, pos.getX(), pos.getY(), pos.getZ(), FEED_SOUND_VOLUME, 1.0f, store);
-        } catch (Throwable t) {
-            if (!soundFailureLogged) {
-                soundFailureLogged = true;
-                System.out.println("[HorseFollow] ItemConsume: Erro ao tocar som de feed: " + t.getClass().getSimpleName() + " — " + t.getMessage());
-                t.printStackTrace();
-            }
-        }
+        } catch (Throwable t) { }
     }
 
     /**
@@ -651,7 +764,7 @@ public final class ItemConsume {
      * Obtém o índice do SoundEvent por ID via AssetRegistry + store de SoundEvent (config).
      * O protocolo SoundEvent não tem getAssetMap(); o índice vem do AssetStore do servidor (IndexedLookupTableAssetMap).
      */
-    private static Integer tryGetSoundEventIndex(String soundEventId) {
+    static Integer tryGetSoundEventIndex(String soundEventId) {
         // AssetRegistry.getAssetStore(ConfigSoundEvent.class) -> store.getAssetMap() -> map.getIndex(id)
         try {
             Class<?> configClass = Class.forName("com.hypixel.hytale.server.core.asset.type.soundevent.config.SoundEvent");
@@ -669,12 +782,7 @@ public final class ItemConsume {
                 // IndexedAssetMap usa NOT_FOUND (geralmente -1) quando não encontra
                 if (i >= 0) return i;
             }
-        } catch (Throwable t) {
-            if (!soundFailureLogged) {
-                soundFailureLogged = true;
-                System.out.println("[HorseFollow] ItemConsume: getSoundEventIndex falhou para '" + soundEventId + "': " + t.getMessage());
-            }
-        }
+        } catch (Throwable t) { }
         return null;
     }
 
@@ -689,23 +797,7 @@ public final class ItemConsume {
                     player.sendMessage(Message.raw(message));
                 }
             }
-        } catch (Throwable t) {
-            System.out.println("[HorseFollow] ItemConsume: Erro ao enviar mensagem: " + t.getClass().getSimpleName() + " - " + t.getMessage());
-        }
-    }
-
-    /**
-     * Limpa o estado quando o player sai.
-     */
-    public void onPlayerDisconnect(Ref<EntityStore> playerRef) {
-        if (playerRef != null) {
-            lastScheduled.remove(playerRef);
-            lastFeedHandledByFKey.remove(playerRef);
-            lastHorseFeedQuantity.remove(playerRef);
-            lastRamFeedQuantity.remove(playerRef);
-            lastHornUseCompleteTime.remove(playerRef);
-            lastHornChargeStartTime.remove(playerRef);
-        }
+        } catch (Throwable t) { }
     }
 
     /**
