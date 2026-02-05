@@ -11,14 +11,14 @@
     "Input": [
       {
         "Quantity": 1,
-        "ResourceTypeId": "Ingredient_Voidheart"
+        "ItemId": "Ingredient_Voidheart"
       },
       {
         "ItemId": "Ingredient_Crystal_Purple",
         "Quantity": 10
       },
       {
-        "ResourceTypeId": "Ingredient_Bar_Silver",
+        "ItemId": "Ingredient_Bar_Silver",
         "Quantity": 4
       }
     ],
